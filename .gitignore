@@ -1,0 +1,75 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+eggs/
+*.egg-info/
+*.egg
+
+# Virtual environments
+venv/
+env/
+.venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Jupyter
+.ipynb_checkpoints
+
+# Logs and outputs
+logs/
+*.log
+runs/
+output/
+checkpoints/
+checkpoints-*/
+saved_models/
+model_weights/
+
+# PyTorch artifacts
+*.pt
+*.pth
+*.ckpt
+*.tar
+*.pth.tar
+
+# Data
+data/
+dataset/
+datasets/
+*.lmdb
+
+# Cache
+.cache/
+.pytest_cache/
+
+# IDEs
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Large model artifacts (optional)
+# Uncomment if you store large checkpoints outside object storage
+# *.bin
+
+# Python package manager
+pip-wheel-metadata/
+
+# Notebook checkpoints
+/.ipynb_checkpoints/
+
+# Local env files
+.env
+.env.*
+
+# Safety: keep credentials out
+credentials/
+secrets/
