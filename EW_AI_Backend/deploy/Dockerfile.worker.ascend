@@ -1,3 +1,8 @@
 # Dockerfile.worker.ascend
 # [部署] Ascend worker 专用 Dockerfile（供 deploy 目录参考）
-# 说明：实际内容将在实现阶段补充（基于 Ascend/Huawei 官方镜像）。
+# 说明：占位 Dockerfile — 已添加基本 `FROM`（Ubuntu 24.04 LTS）以消除 lint 警告。
+# 注意：Ascend 运行时镜像通常由华为或厂商提供，请在实现阶段替换为对应官方镜像并安装 ACL、驱动与 torch_npu。
+
+FROM ubuntu:24.04
+
+# 后续在实现阶段：安装 Ascend SDK/ACL、配置驱动、并将 Worker 代码与依赖写入镜像。

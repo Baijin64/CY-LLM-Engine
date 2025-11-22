@@ -1,5 +1,9 @@
 # Dockerfile.gateway
-# [部署] 网关容器镜像构建说明（基于 Java 17 / Spring Boot 3）
-# 说明：用于构建 Gateway 服务的镜像，包含必要的 JVM 配置与运行命令。
+# [部署] 网关容器镜像构建说明（基于 Java 21 / Spring Boot 3）
+# 说明：占位 Dockerfile — 已添加基本 `FROM` 以消除 lint 警告。
+# 请在实现阶段替换为实际构建镜像（例如使用 Maven/Gradle 构建并使用 `openjdk:21-jdk-slim` 作为运行镜像）。
 
-# 内容将在实现阶段补充（例如：FROM eclipse-temurin:17-jdk 等）。
+FROM openjdk:21-jdk-slim
+
+# 说明：使用 Java 21 (LTS) 作为占位运行时以匹配新项目的 LTS 要求。
+# 后续步骤：在实现阶段使用多阶段构建，构建并复制 Spring Boot 可执行 jar，然后设置合适的运行命令。

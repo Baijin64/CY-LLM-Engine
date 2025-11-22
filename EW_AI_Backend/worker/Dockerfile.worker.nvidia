@@ -1,5 +1,10 @@
 # Dockerfile.worker.nvidia
 # [部署] 基于 NVIDIA 容器（含 CUDA、cuDNN、NCCL、PyTorch）
-# 说明：用于构建支持 NVIDIA GPU 的 Worker 镜像。
+# 说明：占位 Dockerfile — 已添加基本 `FROM` 以消除 lint 警告。
+# 请根据目标 CUDA 版本替换为合适的 NVIDIA 基础镜像（示例使用 CUDA 12.1 运行时）。
 
-# 具体 FROM 与构建步骤在实现阶段补充。
+FROM nvidia/cuda:11.8.0-runtime-ubuntu24.04
+
+# 说明：占位镜像使用 CUDA 11.8 (cu118) 运行时，基于 Ubuntu 24.04 LTS。
+# 注意：用户提到 CUDA 为 conda 包版本 cu118；在镜像内可通过 Conda 安装对应的 PyTorch/CUDA 包（例如 conda 的 cudatoolkit 或匹配的 pytorch/cuda 包）。
+# 后续：安装 Python、conda、并通过 conda 安装 cu118 对应的 PyTorch/依赖，然后复制应用代码。

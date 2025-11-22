@@ -1,5 +1,9 @@
 # Dockerfile.gateway
-# [部署] Gateway Java 17 运行镜像（放在 deploy 目录以便参考）
-# 说明：与 gateway/Dockerfile.gateway 相同，用于 CI/CD 流程引用。
+# [部署] Gateway Java 21 运行镜像（放在 deploy 目录以便参考）
+# 说明：占位 Dockerfile — 已添加基本 `FROM` 以消除 lint 警告。
+# 本文件用于 CI/CD 参考；在 CI 中可替换为构建阶段生成的运行镜像。
 
-# 具体实现将在后续阶段添加。
+FROM openjdk:21-jdk-slim
+
+# 说明：Gateway 占位运行镜像使用 Java 21 (LTS)。
+# CI 建议：使用多阶段构建，先构建 jar，再复制到轻量运行镜像中。

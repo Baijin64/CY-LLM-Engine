@@ -1,5 +1,9 @@
 # Dockerfile.worker.ascend
 # [部署] 基于 Ascend/Huawei 镜像（含 ACL、torch_npu）
-# 说明：用于构建支持 Ascend 硬件的 Worker 镜像。
+# 说明：占位 Dockerfile — 已添加基本 `FROM` 以消除 lint 警告。
+# Ascend 的运行时镜像通常由厂商提供；请替换为厂商提供的基础镜像（或在内部镜像库中查找）。
 
-# 具体 FROM 与构建步骤在实现阶段补充。
+FROM ubuntu:24.04
+
+# 说明：占位镜像使用 Ubuntu 24.04 LTS 为基础；Ascend 运行时镜像通常由厂商提供。
+# 后续：在实现阶段请替换为华为 Ascend 官方/合作镜像，并在镜像内安装 ACL、torch_npu 与必要驱动。

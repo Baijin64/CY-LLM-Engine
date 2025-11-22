@@ -1,3 +1,9 @@
 # Dockerfile.worker.nvidia
 # [部署] Nvidia worker 专用 Dockerfile（供 deploy 目录参考）
-# 说明：实际内容将在实现阶段补充（例如基于 NVIDIA NGC 或 CUDA 基础镜像）。
+# 说明：占位 Dockerfile — 已添加基本 `FROM` 以消除 lint 警告。
+# 在 deploy 目录中保留参考镜像，实际 CI/CD 应替换为具体版本或内部镜像。
+
+FROM nvidia/cuda:11.8.0-runtime-ubuntu24.04
+
+# 说明：deploy 目录中的 Nvidia 占位镜像也使用 CUDA 11.8 (cu118) + Ubuntu 24.04。
+# 在 CI 中请替换为具体的、经验证的内部或官方镜像，并通过多阶段构建得到最小运行镜像。
