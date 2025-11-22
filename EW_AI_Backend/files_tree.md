@@ -2,6 +2,8 @@
 
 以下为当前仓库 `EW_AI_Backend/` 的文件树概览，文件均为占位注释或配置示例，便于快速浏览项目架构。
 
+说明：旧的顶层脚本 `ai_backend.py` 已移除，替换为更稳健的 `scripts/diagnose_env.py`（位于项目根的 `scripts/` 目录中），并在 `EW_AI_Backend` 内保留占位资源与部署文件。
+
 EW_AI_Backend/
 ├── proto/
 │   └── ai_service.proto                 # [Core] gRPC 定义：StreamPredict、ControlMessage、Backpressure（占位）
@@ -44,5 +46,8 @@ EW_AI_Backend/
     ├── Dockerfile.worker.nvidia         # [部署] Nvidia Worker 占位（deploy 参考）
     ├── Dockerfile.worker.ascend         # [部署] Ascend Worker 占位（deploy 参考）
     └── docker-compose.yml               # [本地开发] Compose 占位
+
+scripts/
+└── diagnose_env.py                      # [工具] 新增的硬件诊断脚本：支持 CUDA 与 Ascend 检测与推理自检（位于仓库根）
 
 说明：当前所有文件均为占位注释或配置样例；如需我继续生成关键文件的骨架（例如 `memory_manager.py` 方法签名、`ModelRegistry.kt` 接口或 `ai_service.proto` 的双向流定义），请告诉我优先级。
