@@ -1,0 +1,5 @@
+# requirements.txt
+# [依赖] 通用 Python 依赖（grpcio, torch, protobuf 等）
+# 说明：用于 Nvidia 与通用 CPU 情况下的依赖列表。
+
+# 具体包在实现阶段列出。

@@ -1,0 +1,5 @@
+# Dockerfile.worker.nvidia
+# [部署] 基于 NVIDIA 容器（含 CUDA、cuDNN、NCCL、PyTorch）
+# 说明：用于构建支持 NVIDIA GPU 的 Worker 镜像。
+
+# 具体 FROM 与构建步骤在实现阶段补充。

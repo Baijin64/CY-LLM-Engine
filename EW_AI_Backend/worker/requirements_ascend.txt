@@ -1,0 +1,5 @@
+# requirements_ascend.txt
+# [依赖] 华为 Ascend 专用依赖（torch_npu, ascend-xxx 等）
+# 说明：仅在 Ascend 硬件/镜像下使用。
+
+# 具体包在实现阶段列出。

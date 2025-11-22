@@ -1,0 +1,5 @@
+# Dockerfile.gateway
+# [部署] Gateway Java 17 运行镜像（放在 deploy 目录以便参考）
+# 说明：与 gateway/Dockerfile.gateway 相同，用于 CI/CD 流程引用。
+
+# 具体实现将在后续阶段添加。

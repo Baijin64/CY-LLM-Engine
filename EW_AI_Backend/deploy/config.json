@@ -1,0 +1,5 @@
+{
+  // config.json
+  // [部署配置] 逻辑模型 ID 到物理后端（Azure/Nvidia vs Huawei/Ascend）映射样例
+  // 说明：示例文件，实际格式与规则在实现阶段定义。
+}

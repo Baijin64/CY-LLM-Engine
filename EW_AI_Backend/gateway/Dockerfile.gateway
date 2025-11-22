@@ -1,0 +1,5 @@
+# Dockerfile.gateway
+# [部署] 网关容器镜像构建说明（基于 Java 17 / Spring Boot 3）
+# 说明：用于构建 Gateway 服务的镜像，包含必要的 JVM 配置与运行命令。
+
+# 内容将在实现阶段补充（例如：FROM eclipse-temurin:17-jdk 等）。

@@ -1,0 +1,9 @@
+// ai_service.proto
+// [Core] gRPC 定义：StreamPredict、ControlMessage、Backpressure
+// 说明：此文件用于定义双向流预测接口、控制消息和背压信号的 Protobuf schema。
+
+syntax = "proto3";
+
+package genshin.ai;
+
+// NOTE: 具体消息定义在实现阶段添加。

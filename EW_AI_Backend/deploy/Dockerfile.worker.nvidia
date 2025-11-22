@@ -1,0 +1,3 @@
+# Dockerfile.worker.nvidia
+# [部署] Nvidia worker 专用 Dockerfile（供 deploy 目录参考）
+# 说明：实际内容将在实现阶段补充（例如基于 NVIDIA NGC 或 CUDA 基础镜像）。
