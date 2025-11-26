@@ -23,6 +23,8 @@ EW_AI_Backend/
 │       │   └── InferenceService.kt      # [编排] 推理转发占位
 │       └── model/
 │           └── DomainModels.kt          # [DTO] 域模型占位
+├── tests/
+│   └── test_integration.py              # 交互式测试入口：目前包含引擎冒烟、内存管理与端到端集成三种模式
 ├── worker/ (Python PyTorch)
 │   ├── main.py                          # [入口] Worker 启动脚本占位
 │   ├── requirements.txt                 # [依赖] 通用占位
@@ -32,12 +34,16 @@ EW_AI_Backend/
 │   ├── config/
 │   │   └── config_loader.py             # [配置] 硬件/配置检测占位
 │   ├── core/
-│   │   ├── server.py                    # [gRPC 服务] 双向流占位
-│   │   └── memory_manager.py            # [关键] GPUMemoryManager：引用计数 + LRU（占位）
+│   │   ├── memory_manager.py            # GPU LRU + 引用计数管理实现
+│   │   ├── server.py                    # gRPC 双向流服务骨架
+│   │   ├── task_scheduler.py            # 推理任务调度占位
+│   │   └── telemetry.py                 # 指标与日志采集占位
 │   ├── engines/
-│   │   ├── abstract_engine.py           # [抽象] 引擎接口占位
-│   │   ├── nvidia_engine.py             # [实现] NvidiaEngine 占位
-│   │   └── ascend_engine.py             # [实现] AscendEngine 占位
+│   │   ├── abstract_engine.py           # 推理引擎抽象基类
+│   │   ├── nvidia_engine.py             # CUDA 引擎实现（可选 4bit 量化 + LoRA 支持）
+│   │   ├── ascend_engine.py             # 昇腾引擎占位
+│   │   ├── hybrid_engine.py             # 多后端调度占位
+│   │   └── engine_factory.py            # 引擎工厂与注册表占位
 │   └── utils/
 │       └── stream_buffer.py             # [流控] token/帧流缓冲占位
 └── deploy/
