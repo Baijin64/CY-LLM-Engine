@@ -17,11 +17,10 @@ markdown
 ### 1. 环境要求
 - 操作系统：Linux / macOS / Windows
 - 语言运行环境：
-  - Python >= 3.9
-  - Java >= 17
-- 依赖工具：
-  - Docker（可选，用于容器化部署）
-  - Git
+  - Python >= 3.10
+  - Java >= 17 (用于 Gateway)
+- 硬件要求：
+  - Nvidia GPU (CUDA 11.8+) 或 Huawei Ascend NPU (CANN 8.0+)
 
 ### 2. 安装步骤
 ```bash
@@ -32,52 +31,53 @@ cd yourrepo
 # 安装 Python 依赖
 pip install -r requirements.txt
 
-# 编译 Java 模块
-./gradlew build
-3. 启动服务
-bash
-# 启动 Python 服务
-python app.py
+# (可选) 如果使用 Ascend NPU，安装专用依赖
+# pip install -r EW_AI_Backend/worker/requirements_ascend.txt
+```
 
-# 启动 Java 服务
-java -jar build/libs/backend.jar
-⚙️ 配置说明
-config.yaml：服务配置文件，包含端口、数据库连接、模型路径等。
+### 3. 运行 Worker 服务
+Worker 是核心推理进程，可以通过命令行启动。
 
-环境变量：
+**查看可用模型列表：**
+```bash
+python EW_AI_Backend/worker/main.py --list-models
+```
 
-MODEL_PATH：AI 模型文件路径
+**启动推理服务：**
+```bash
+# 默认监听 50051 端口
+python EW_AI_Backend/worker/main.py --port 50051 --device cuda
+```
 
-DB_URL：数据库连接地址
+### 4. 运行测试
+本项目包含完整的集成测试套件，用于验证各个模块的功能。
 
-API_KEY：远程调用的密钥
+```bash
+# 运行交互式集成测试
+# 包含：调度器压力测试、流缓冲测试、遥测测试、模型加载测试
+python EW_AI_Backend/tests/test_integration.py
+```
 
-📡 API 接口示例
-推理接口
-http
-POST /api/v1/inference
-Content-Type: application/json
+---
 
-{
-  "input": "用户输入文本或数据"
-}
-返回：
+## 📂 项目结构
+```
+EW_AI_Backend/
+├── worker/                 # [核心] Python 推理服务
+│   ├── core/               # 核心组件 (Server, Scheduler, MemoryManager, Telemetry)
+│   ├── engines/            # 硬件后端实现 (NvidiaEngine, AscendEngine)
+│   ├── utils/              # 通用工具 (StreamBuffer)
+│   └── main.py             # 服务启动入口
+├── tests/                  # 测试套件
+│   └── test_integration.py # 集成测试脚本
+├── proto/                  # gRPC 协议定义 (待实现)
+└── gateway/                # [网关] Kotlin Spring Boot 服务 (待实现)
+```
 
-json
-{
-  "output": "模型推理结果"
-}
-🧪 测试
-bash
-pytest tests/
-📦 部署
-支持以下部署方式：
+## 📝 版本历史
+- **[Alpha] 0.1.1.5**: 完成 Worker 核心架构搭建，包括调度器、流缓冲、遥测模块及统一入口脚本。
 
-本地运行
+---
 
-Docker 容器化
-
-云平台（AWS / Azure / GCP）
-
-🤝 贡献
+## 🤝 贡献
 欢迎提交 Issue 或 Pull Request 来改进本项目。
