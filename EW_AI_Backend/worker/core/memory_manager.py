@@ -56,11 +56,15 @@ class GPUMemoryManager:
                 self.model_locks[model_id] = threading.Lock()
             print(f"[GPUMemoryManager] Registered model: {model_id}")
 
+		# 说明：register_model 会在模型成功加载后被调用，负责记录访问时间和分配锁
+
     def access_model(self, model_id: str):
         """更新模型的访问时间 (LRU)"""
         with self._lock:
             if model_id in self.loaded_models:
                 self.last_access_time[model_id] = time.time()
+
+		# 说明：在每次推理完成或显式访问时调用，以更新 LRU 时间戳
 
     def get_loaded_model(self, model_id: str) -> Optional['BaseEngine']:
         """获取已加载的模型引擎，如果存在"""
@@ -81,6 +85,8 @@ class GPUMemoryManager:
         if usage_ratio > self.max_gpu_memory_usage:
             print(f"[GPUMemoryManager] High memory usage detected ({usage_ratio:.2%}). Triggering eviction...")
             self._evict_lru_model()
+
+		# 说明：外部可以周期性调用 check_memory_and_evict，或在加载新模型前主动调用以保证足够显存
 
     def _evict_lru_model(self):
         """卸载最近最少使用的模型"""

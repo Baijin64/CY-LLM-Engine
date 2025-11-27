@@ -3,8 +3,9 @@
 import argparse
 import os
 import sys
+import threading
 import time
-from typing import Callable, Dict
+from typing import Callable, Dict, List
 
 import torch
 
@@ -14,6 +15,9 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "../worker"))
 from engines.abstract_engine import BaseEngine
 from engines.nvidia_engine import NvidiaEngine
 from core.memory_manager import GPUMemoryManager
+from core.task_scheduler import SchedulerBusy, TaskScheduler
+from core.telemetry import Telemetry
+from utils.stream_buffer import BufferClosed, StreamBuffer
 
 
 def _reset_manager(manager: GPUMemoryManager) -> None:
@@ -100,6 +104,49 @@ def run_memory_manager_test() -> None:
     _reset_manager(manager)
 
 
+def run_task_scheduler_test() -> None:
+    """验证 TaskScheduler 的优先级与背压行为。"""
+
+    print("=== [3] TaskScheduler 调度测试 ===")
+    # 使用 2 个 worker，队列容量为 2。要验证背压，需要同时让 worker 占满并把队列填满。
+    scheduler = TaskScheduler(max_workers=2, queue_size=2)
+    execution_order: List[str] = []
+
+    def make_task(name: str, sleep_time: float) -> Callable[[], None]:
+        def _task() -> None:
+            # 模拟长耗时任务，确保在提交 overflow 时队列仍然被占用
+            time.sleep(sleep_time)
+            execution_order.append(name)
+
+        return _task
+
+    # 提交足够多的任务来占满 worker(2) + 队列(2) = 共 4 个任务
+    futures = []
+    futures.append(scheduler.submit(make_task("task-1", 0.3), priority=1))
+    futures.append(scheduler.submit(make_task("task-2", 0.3), priority=1))
+    futures.append(scheduler.submit(make_task("task-3", 0.3), priority=0))
+    futures.append(scheduler.submit(make_task("task-4", 0.3), priority=0))
+
+    # 立即尝试提交第 5 个任务，应触发 SchedulerBusy（背压）
+    try:
+        scheduler.submit(make_task("overflow", 0.01), priority=0)
+    except SchedulerBusy:
+        print("[SchedulerTest] 背压验证通过：队列已满时抛出 SchedulerBusy。")
+    else:
+        print("[SchedulerTest] 背压验证失败：应当抛出 SchedulerBusy。")
+
+    # 等待已有任务完成，然后关闭调度器
+    for future in futures:
+        try:
+            future.result(timeout=5)
+        except Exception:
+            pass
+
+    scheduler.shutdown()
+    print(f"执行顺序: {execution_order}")
+    print("[SchedulerTest] 完成。")
+
+
 def run_integration_test() -> None:
     """端到端测试：模型加载、推理以及显存回收流程。"""
 
@@ -161,11 +208,73 @@ def run_integration_test() -> None:
         print("[Integration] 警告：模型仍在内存中，请检查逻辑。")
 
 
+def run_stream_buffer_test() -> None:
+    """验证 StreamBuffer 的背压与关闭语义。"""
+
+    print("=== [4] StreamBuffer 流控测试 ===")
+    buffer = StreamBuffer[str](max_size=3, warn_threshold=0.6)
+    produced: List[str] = []
+    consumed: List[str] = []
+
+    def producer() -> None:
+        for idx in range(5):
+            item = f"token-{idx}"
+            produced.append(item)
+            accepted = buffer.push(item, block=False)
+            if not accepted:
+                print(f"[StreamBufferTest] 背压触发，丢弃: {item}")
+                time.sleep(0.05)
+                buffer.push(item, block=True)
+        buffer.close()
+
+    def consumer() -> None:
+        while True:
+            try:
+                token = buffer.pop(timeout=0.2)
+            except BufferClosed:
+                break
+            consumed.append(token)
+            time.sleep(0.03)
+
+    t_prod = threading.Thread(target=producer)
+    t_cons = threading.Thread(target=consumer)
+    t_prod.start()
+    t_cons.start()
+    t_prod.join()
+    t_cons.join()
+
+    print(f"已生产: {produced}")
+    print(f"已消费: {consumed}")
+    print(f"统计数据: {buffer.stats()}")
+    print("[StreamBufferTest] 完成。")
+
+
+def run_telemetry_test() -> None:
+    """验证 Telemetry 指标快照与导出逻辑。"""
+
+    print("=== [5] Telemetry 指标测试 ===")
+    telemetry = Telemetry()
+
+    for latency, success in [(0.12, True), (0.3, False), (0.05, True)]:
+        telemetry.track_request_start()
+        time.sleep(0.01)
+        telemetry.track_request_end(latency, success=success)
+
+    telemetry.record_gpu_usage(used_mb=2048.0, total_mb=8192.0)
+    snapshot = telemetry.snapshot()
+    print("快照:", snapshot)
+    print("Prometheus 导出:\n" + telemetry.export_prometheus())
+    print("[TelemetryTest] 完成。")
+
+
 def main() -> None:
     choices: Dict[str, Callable[[], None]] = {
         "engine": run_engine_smoke_test,
         "memory": run_memory_manager_test,
+        "scheduler": run_task_scheduler_test,
         "integration": run_integration_test,
+        "stream": run_stream_buffer_test,
+        "telemetry": run_telemetry_test,
     }
 
     parser = argparse.ArgumentParser(description="EW AI Backend 测试入口")
@@ -179,14 +288,20 @@ def main() -> None:
     menu_mapping = {
         "1": "engine",
         "2": "memory",
-        "3": "integration",
+        "3": "scheduler",
+        "4": "integration",
+        "5": "stream",
+        "6": "telemetry",
     }
 
     while True:
         print("\n请选择要运行的测试：")
         print("  [1] NvidiaEngine 冒烟测试")
         print("  [2] GPUMemoryManager LRU 测试")
-        print("  [3] 集成测试 (NvidiaEngine + MemoryManager)")
+        print("  [3] TaskScheduler 调度测试")
+        print("  [4] 集成测试 (NvidiaEngine + MemoryManager)")
+        print("  [5] StreamBuffer 流控测试")
+        print("  [6] Telemetry 指标测试")
         print("  [q] 退出")
 
         choice = input("请输入选项: ").strip().lower()

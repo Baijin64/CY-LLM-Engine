@@ -1,5 +1,12 @@
 # requirements_ascend.txt
-# [依赖] 华为 Ascend 专用依赖（torch_npu, ascend-xxx 等）
+# [依赖] 华为 Ascend 专用依赖
 # 说明：仅在 Ascend 硬件/镜像下使用。
+# 注意：torch_npu 版本必须与宿主机的 CANN (Compute Architecture for Neural Networks) 版本严格对应。
+# 通常建议从华为官方源或通过 .whl 文件安装。
 
-# 具体包在实现阶段列出。
+torch_npu
+decorator
+scipy
+attrs
+psutil
+numpy
