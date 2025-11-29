@@ -1,0 +1,11 @@
+{
+  "models": {
+    "test-model": {
+      "primary": {
+        "host": "localhost",
+        "port": 9090,
+        "provider": "test-provider"
+      }
+    }
+  }
+}

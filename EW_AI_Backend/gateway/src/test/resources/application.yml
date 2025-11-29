@@ -1,0 +1,20 @@
+gateway:
+  registry:
+    path: "classpath:test-registry.json" # 指向测试资源中的注册表
+    default-model: "test-model"
+  grpc:
+    plaintext: true
+  resilience:
+    circuit-breaker:
+      failure-rate-threshold: 50
+    retry:
+      max-attempts: 2
+      wait-duration: 100ms
+    bulkhead:
+      max-concurrent: 10
+    time-limiter:
+      timeout: 2s
+
+logging:
+  level:
+    com.genshin.ai: DEBUG

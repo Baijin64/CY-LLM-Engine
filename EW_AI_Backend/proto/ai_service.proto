@@ -6,4 +6,59 @@ syntax = "proto3";
 
 package genshin.ai;
 
-// NOTE: 具体消息定义在实现阶段添加。
+option java_multiple_files = true;
+option java_package = "com.genshin.ai.proto";
+option java_outer_classname = "AiServiceProto";
+
+message StreamMetadata {
+	string trace_id = 1;
+	string tenant = 2;
+	string player_id = 3;
+	string locale = 4;
+	map<string, string> extra = 5;
+}
+
+message GenerationParameters {
+	uint32 max_new_tokens = 1;
+	double temperature = 2;
+	double top_p = 3;
+	double repetition_penalty = 4;
+}
+
+message StreamPredictRequest {
+	string model_id = 1;
+	string prompt = 2;
+	string adapter = 3;
+	int32 priority = 4;
+	GenerationParameters generation = 5;
+	StreamMetadata metadata = 6;
+	string worker_hint = 7;
+}
+
+message StreamPredictResponse {
+	string trace_id = 1;
+	string chunk = 2;
+	bool end_of_stream = 3;
+	uint32 index = 4;
+}
+
+message ControlMessage {
+	string trace_id = 1;
+	string command = 2;
+	map<string, string> payload = 3;
+}
+
+message WorkerHealthRequest {
+	string trace_id = 1;
+}
+
+message WorkerHealthResponse {
+	bool healthy = 1;
+	map<string, string> metrics = 2;
+}
+
+service AiInference {
+	rpc StreamPredict(stream StreamPredictRequest) returns (stream StreamPredictResponse);
+	rpc Control(ControlMessage) returns (ControlMessage);
+	rpc Health(WorkerHealthRequest) returns (WorkerHealthResponse);
+}
