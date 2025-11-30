@@ -77,3 +77,4 @@ pip-wheel-metadata/
 # Safety: keep credentials out
 credentials/
 secrets/
+/deploy_tool
