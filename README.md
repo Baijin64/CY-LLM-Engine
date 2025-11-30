@@ -1,83 +1,227 @@
-📄 README 模板（AI 后端项目）
-markdown
-# AI Deployment Backend
+# Element Warfare AI
 
-## 📌 项目简介
-本项目是一个用于 **AI 模型运行与远程连接** 的后端服务，支持多语言（Java + Python），可扩展到不同的 AI 应用场景。  
-主要功能包括：
-- 模型加载与推理
-- 远程 API 调用
-- 用户认证与权限管理
-- 日志与监控
+> 🚀 **高性能** · **使用简洁** · **高度自定义** 的完整 AI 服务系统
 
----
+一个支持多种推理引擎（vLLM / TensorRT-LLM / MindIE）、多种硬件平台（NVIDIA GPU / 华为 Ascend NPU）的统一 AI 推理后端。
+
+## ✨ 特性
+
+- **四种推理引擎**: `cuda-vllm` / `cuda-trt` / `ascend-vllm` / `ascend-mindie`
+- **一键部署**: 统一的 `./ew` 命令行工具
+- **流式推理**: SSE 实时流式返回
+- **企业级网关**: Kotlin + Spring WebFlux 响应式架构
+- **弹性伸缩**: 支持多 Worker 实例
+- **双平台支持**: NVIDIA CUDA 与 华为 Ascend NPU
 
 ## 🚀 快速开始
 
-### 1. 环境要求
-- 操作系统：Linux / macOS / Windows
-- 语言运行环境：
-  - Python >= 3.10
-  - Java >= 17 (用于 Gateway)
-- 硬件要求：
-  - Nvidia GPU (CUDA 11.8+) 或 Huawei Ascend NPU (CANN 8.0+)
+### 30 秒启动
 
-### 2. 安装步骤
+```bash
+# 1. 初始化环境
+./ew setup --engine cuda-vllm
+
+# 2. 启动服务
+./ew start --model deepseek-v3
+```
+
+服务将在 `http://localhost:8080` 启动。
+
+### 测试推理
+
+```bash
+curl -X POST http://localhost:8080/api/v1/inference/stream \
+  -H "Content-Type: application/json" \
+  -d '{"modelId": "deepseek-v3", "prompt": "你好"}' \
+  --no-buffer
+```
+
+## 📦 安装
+
+### 环境要求
+
+| 组件 | 最低版本 |
+|------|----------|
+| Python | 3.10+ |
+| Java | 21+ |
+| CUDA | 12.0+ (NVIDIA) |
+| CANN | 8.0+ (Ascend) |
+
+### 方式一：本地部署 (推荐开发)
+
 ```bash
 # 克隆仓库
-git clone https://github.com/yourname/yourrepo.git
-cd yourrepo
+git clone https://github.com/your-repo/EW_AI_Deployment.git
+cd EW_AI_Deployment
 
-# 安装 Python 依赖
-pip install -r requirements.txt
+# 初始化环境
+./ew setup
 
-# (可选) 如果使用 Ascend NPU，安装专用依赖
-# pip install -r EW_AI_Backend/worker/requirements_ascend.txt
+# 启动服务
+./ew start
 ```
 
-### 3. 运行 Worker 服务
-Worker 是核心推理进程，可以通过命令行启动。
-
-**查看可用模型列表：**
-```bash
-python EW_AI_Backend/worker/main.py --list-models
-```
-
-**启动推理服务：**
-```bash
-# 默认监听 50051 端口
-python EW_AI_Backend/worker/main.py --port 50051 --device cuda
-```
-
-### 4. 运行测试
-本项目包含完整的集成测试套件，用于验证各个模块的功能。
+### 方式二：Docker 部署 (推荐生产)
 
 ```bash
-# 运行交互式集成测试
-# 包含：调度器压力测试、流缓冲测试、遥测测试、模型加载测试
-python EW_AI_Backend/tests/test_integration.py
+cd EW_AI_Backend/deploy
+
+# 配置环境变量
+cp .env.example .env
+vim .env  # 编辑配置
+
+# 启动服务
+./ew docker up
 ```
 
----
+## 🎯 引擎选择指南
 
-## 📂 项目结构
+| 引擎 | 硬件 | 特点 | 适用场景 |
+|------|------|------|----------|
+| `cuda-vllm` | NVIDIA GPU | PagedAttention, 高吞吐 | 通用推荐 |
+| `cuda-trt` | NVIDIA GPU | 极致性能, 需预编译 | 固定模型生产 |
+| `ascend-vllm` | 华为 NPU | 兼容 vLLM API | Ascend 环境 |
+| `ascend-mindie` | 华为 NPU | 官方优化 | Ascend 高性能 |
+
+```bash
+# 使用 vLLM (默认)
+./ew start --engine cuda-vllm
+
+# 使用 TensorRT-LLM
+./ew start --engine cuda-trt
+
+# 使用华为 Ascend
+./ew start --engine ascend-vllm
 ```
-EW_AI_Backend/
-├── worker/                 # [核心] Python 推理服务
-│   ├── core/               # 核心组件 (Server, Scheduler, MemoryManager, Telemetry)
-│   ├── engines/            # 硬件后端实现 (NvidiaEngine, AscendEngine)
-│   ├── utils/              # 通用工具 (StreamBuffer)
-│   └── main.py             # 服务启动入口
-├── tests/                  # 测试套件
-│   └── test_integration.py # 集成测试脚本
-├── proto/                  # gRPC 协议定义 (待实现)
-└── gateway/                # [网关] Kotlin Spring Boot 服务 (待实现)
+
+## 📖 CLI 命令参考
+
+```bash
+./ew <command> [options]
+
+命令:
+  setup       初始化环境 (Conda + 依赖 + Gateway)
+  start       启动完整服务 (Gateway + Worker)
+  worker      仅启动 Worker
+  stop        停止所有服务
+  status      查看服务状态
+  docker      Docker Compose 部署
+  test        运行测试
+  models      模型管理
+  help        显示帮助
+
+常用选项:
+  --engine TYPE     推理引擎 (cuda-vllm/cuda-trt/ascend-vllm/ascend-mindie)
+  --model ID        模型 ID
+  --port PORT       Gateway 端口 (默认: 8080)
+  -d, --daemon      后台运行
+
+示例:
+  ./ew setup --engine cuda-vllm       # 初始化
+  ./ew start --model qwen2.5-72b      # 启动指定模型
+  ./ew start -d                       # 后台启动
+  ./ew docker up --scale 2            # Docker 双 Worker
+  ./ew status                         # 查看状态
+```
+
+## �� 架构
+
+```
+┌─────────────┐      HTTP/SSE      ┌─────────────────┐
+│   Client    │  ───────────────▶  │     Gateway     │
+│  (Browser)  │                    │  (Kotlin/Spring)│
+└─────────────┘                    └────────┬────────┘
+                                            │ gRPC
+                                            ▼
+                                   ┌─────────────────┐
+                                   │     Worker      │
+                                   │    (Python)     │
+                                   └────────┬────────┘
+                                            │
+                    ┌───────────────────────┼───────────────────────┐
+                    │                       │                       │
+              ┌─────▼─────┐          ┌──────▼──────┐         ┌──────▼──────┐
+              │ cuda-vllm │          │  cuda-trt   │         │ascend-vllm  │
+              │   (vLLM)  │          │(TensorRT)   │         │(vLLM-Ascend)│
+              └───────────┘          └─────────────┘         └─────────────┘
+```
+
+## �� 项目结构
+
+```
+EW_AI_Deployment/
+├── ew                          # 🔧 统一 CLI 工具
+├── EW_AI_Backend/
+│   ├── gateway/                # Kotlin Gateway 服务
+│   │   └── src/main/kotlin/    # Spring WebFlux + gRPC
+│   ├── worker/                 # Python Worker 服务
+│   │   ├── engines/            # 推理引擎实现
+│   │   │   ├── vllm_cuda_engine.py
+│   │   │   ├── trt_engine.py
+│   │   │   ├── vllm_ascend_engine.py
+│   │   │   └── mindie_engine.py
+│   │   └── core/               # 核心组件
+│   ├── deploy/                 # 部署配置
+│   │   ├── docker-compose.yml
+│   │   ├── config.json         # 模型配置
+│   │   └── .env.example        # 环境变量模板
+│   └── proto/                  # gRPC 协议定义
+└── EW_AI_Training/             # 训练相关 (可选)
+```
+
+## ⚙️ 配置
+
+### 环境变量
+
+```bash
+# 核心配置
+EW_ENGINE=cuda-vllm          # 推理引擎
+EW_PORT=8080                 # Gateway 端口
+EW_MODEL=deepseek-v3         # 默认模型
+
+# vLLM 配置
+VLLM_TP=1                    # 张量并行度
+VLLM_GPU_MEM=0.9             # GPU 显存使用率
+```
+
+完整配置参见 `EW_AI_Backend/deploy/.env.example`。
+
+### 模型配置
+
+编辑 `EW_AI_Backend/deploy/config.json`:
+
+```json
+{
+  "models": {
+    "my-model": {
+      "engine": "cuda-vllm",
+      "model_path": "organization/model-name",
+      "max_model_len": 8192,
+      "tensor_parallel_size": 1
+    }
+  }
+}
+```
+
+## 🧪 测试
+
+```bash
+# 运行集成测试
+./ew test integration
+
+# 运行单元测试
+./ew test unit
+
+# 运行所有测试
+./ew test all
 ```
 
 ## 📝 版本历史
-- **[Alpha] 0.1.1.5**: 完成 Worker 核心架构搭建，包括调度器、流缓冲、遥测模块及统一入口脚本。
 
----
+- **[1.5.2.0]** - 简化部署流程，统一 CLI 工具，支持四种推理引擎
+- **[1.5.1.3-alpha]** - C++ 入口点，四引擎架构实现
+- **[1.0.0-alpha]** - 初始版本，Gateway + Worker 基础架构
 
 ## 🤝 贡献
-欢迎提交 Issue 或 Pull Request 来改进本项目。
+
+欢迎提交 Issue 或 Pull Request。
