@@ -124,6 +124,130 @@ vim .env  # 编辑配置
   ./ew status                         # 查看状态
 ```
 
+## 🛠 使用方法（详细）
+
+下面提供开发、Docker 部署与 API 使用的分步说明，便于快速上手与调试。
+
+### 1) 本地开发（推荐）
+
+1. 准备 Python 环境并安装依赖：
+```bash
+cd EW_AI_Backend/worker
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+2. 启动 Redis（如果需要）：
+```bash
+docker run -d --name redis -p 6379:6379 redis:7-alpine
+```
+
+3. 启动 Coordinator（JDK 21）：
+```bash
+cd EW_AI_Backend/coordinator
+JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 ./gradlew bootRun
+```
+
+4. 启动 Worker：
+```bash
+cd EW_AI_Backend/worker
+python -m worker.main --serve --port 50051
+```
+
+5. 启动 Gateway：
+```bash
+cd EW_AI_Backend/gateway
+./gradlew bootRun
+```
+
+6. 使用 `curl` 验证接口（示例）：
+```bash
+curl -X POST http://localhost:8080/api/v1/inference/stream \
+  -H "Content-Type: application/json" \
+  -d '{"modelId": "furina", "prompt": "你好"}' --no-buffer
+```
+
+### 2) Docker / Docker Compose（快速生产/测试）
+
+```bash
+cd EW_AI_Backend/deploy
+cp .env.example .env
+# 编辑 .env 填写 API Key / Coordinator / Worker 配置
+vim .env
+
+# 构建镜像并启动（默认包含 Gateway + Coordinator + Worker）
+docker compose up -d --build
+
+# 查看日志
+docker compose logs -f gateway
+```
+
+### 3) 使用 CLI（`./ew`）
+
+CLI `ew` 提供多种便捷操作：
+
+```bash
+./ew setup --engine cuda-vllm                # 一键初始化 (Conda/依赖/构建)
+./ew start --engine cuda-vllm --model furina # 启动服务
+./ew start -d                                # 后台运行
+./ew stop                                     # 停止所有服务
+./ew test unit                                # 运行单元测试
+```
+
+### 4) 模型管理（添加 / 更新）
+
+编辑 `EW_AI_Backend/deploy/config.json`：
+
+```json
+{
+  "models": {
+    "furina": {
+      "engine": "cuda-vllm",
+      "model_path": "deepseek-ai/deepseek-llm-7b-chat",
+      "adapter_path": "/checkpoints/furina_lora",
+      "max_model_len": 8192
+    }
+  }
+}
+```
+
+编辑后重新加载或重启 Worker。
+
+### 5) 推理接口示例（SSE 实时流）
+
+```bash
+curl -N -H "Content-Type: application/json" -X POST \
+  http://localhost:8080/api/v1/inference/stream \
+  -d '{"modelId": "furina", "prompt": "请描述一下未来 AI 的样子"}'
+```
+
+### 6) 训练接口示例
+
+```bash
+curl -H "Content-Type: application/json" -X POST http://localhost:8080/api/v1/training/start \
+  -d '{"baseModel": "deepseek-ai/deepseek-llm-7b-chat", "outputDir": "/checkpoints/furina_lora", "datasetPath": "/data/train.json"}'
+```
+
+### 7) 运行测试
+
+Python Worker 单元测试：
+```bash
+cd EW_AI_Backend/worker
+pytest tests/ -q
+```
+
+Kotlin Gateway / Coordinator 测试：
+```bash
+cd EW_AI_Backend/gateway
+./gradlew test
+
+cd EW_AI_Backend/coordinator
+./gradlew test
+```
+
+更多高级用法见 `TESTING.md` 或 `CONTRIBUTING.md`。
+
 ## �� 架构
 
 ```
