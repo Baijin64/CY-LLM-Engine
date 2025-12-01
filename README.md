@@ -216,6 +216,54 @@ VLLM_GPU_MEM=0.9             # GPU 显存使用率
 ./ew test all
 ```
 
+## 📚 文档与设计
+
+本仓库包含以下关键文档：
+- `EW_AI_Backend/ARCHITECTURE.md` - 架构说明（Gateway / Coordinator / Worker）
+- `EW_AI_Backend/DEPLOY.md` - 部署与 Docker Compose 说明
+- `TESTING.md` - 测试说明（本地与 CI）
+- `CONTRIBUTING.md` - 提交与版本管理规则（四段式版本号 + 后缀）
+
+建议在提交前运行以下命令以确保本地环境一致：
+
+```bash
+# Worker 单元测试
+cd EW_AI_Backend/worker
+pytest tests/ -q
+
+# Gateway 单元测试（Gradle）
+cd ../gateway
+./gradlew test
+
+# Coordinator 单元测试（Gradle）
+cd ../coordinator
+./gradlew test
+```
+
+
+## 🏷 版本号规范与提交格式
+
+本项目采用 **四段式版本号** 并配合后缀来指示稳定性，例子： `[x.y.z.n-Alpha]`。
+
+- 第一段（x）：重大、**不兼容**变化（破坏性重构）
+- 第二段（y）：向后兼容的新功能（feature）
+- 第三段（z）：Bug 修复与优化
+- 第四段（n）：构建/测试次数（递增）
+
+后缀说明：
+- `PreAlpha`：功能不完整、仍处于设计早期
+- `Alpha`：大部分功能可用，开始第一次测试
+- `Beta`：功能实现完整，展开更广泛测试
+- `RC` / `Release`：可用于生产或候选发布
+
+提交消息与版本号格式（示例）：
+
+`[2.1.1.2-Alpha] refactor(worker): API, async, telemetry, security and performance improvements`
+
+请在提交中包含英文与中文说明（英文在前，空一行，随后中文），并将版本号用方括号完整包围在一行开头，标题与版本号同一行（版本号在前）。
+
+更多贡献规范见 `CONTRIBUTING.md`。
+
 ## 📝 版本历史
 
 - **[1.5.2.0]** - 简化部署流程，统一 CLI 工具，支持四种推理引擎

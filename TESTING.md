@@ -1,0 +1,67 @@
+# 项目测试说明 (TESTING.md)
+
+本文件用来描述如何在本地与 CI 中运行单元测试、集成测试以及代码覆盖率工具。
+
+## Python (Worker)
+
+项目使用 `pytest` 运行 Python 单元测试：
+
+```bash
+# 进入 worker 目录
+cd EW_AI_Backend/worker
+
+# 安装依赖（虚拟环境/conda 推荐）
+pip install -r requirements.txt
+
+# 运行所有单元测试
+pytest tests/ -v
+
+# 运行单个测试文件
+pytest tests/test_prompt_cache.py -q
+
+# 测试并生成覆盖率报告
+pytest --cov=worker --cov-report=html tests/ -q
+open htmlcov/index.html
+```
+
+### 测试分层
+- 单元测试：`tests/test_*.py`（快速，模拟依赖）
+- 集成测试：`tests/integration` 或 `tests/test_integration.py`（需要运行 Gateway/Coordinator/Worker）
+
+## Kotlin (Gateway/Coordinator)
+
+Gateway 和 Coordinator 使用 Gradle 的测试套件：
+
+```bash
+cd EW_AI_Backend/gateway
+./gradlew test
+
+cd EW_AI_Backend/coordinator
+./gradlew test
+```
+
+Gradle 会输出报告到 `build/reports/tests/test/index.html`。
+
+## Docker / CI
+
+CI 流程（建议）:
+1. 运行 Python lints（ruff/flake8/black）
+2. 运行 `pytest --maxfail=1 --disable-warnings -q`
+3. 运行 `./gradlew test` 在 Kotlin 项目中
+4. 如果有需要，运行集成测试（`./ew test integration`）
+
+## 运行本地端到端测试
+
+在 `EW_AI_Backend/deploy/docker-compose.yml` 或 `./ew start` 启动所有服务后，可运行 `EW_AI_Backend/tests/test_integration.py`。
+
+```bash
+cd EW_AI_Backend
+# 启动服务
+./ew start --engine cuda-vllm
+python -m pytest tests/test_integration.py -q
+```
+
+## 新增测试建议
+1. 每新增模块必须附带对应的 `test_*.py` 或 `.kt` 单元测试
+2. 关键路径（net/http handlers、gRPC servicers、memory manager、train/engine、prompt cache）必须有单元或集成测试
+3. 所有破坏性变更必须在 PR 中包含回归测试或兼容性说明
