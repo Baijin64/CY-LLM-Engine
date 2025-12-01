@@ -124,6 +124,130 @@ vim .env  # 编辑配置
   ./ew status                         # 查看状态
 ```
 
+## 🛠 使用方法（详细）
+
+下面提供开发、Docker 部署与 API 使用的分步说明，便于快速上手与调试。
+
+### 1) 本地开发（推荐）
+
+1. 准备 Python 环境并安装依赖：
+```bash
+cd EW_AI_Backend/worker
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+2. 启动 Redis（如果需要）：
+```bash
+docker run -d --name redis -p 6379:6379 redis:7-alpine
+```
+
+3. 启动 Coordinator（JDK 21）：
+```bash
+cd EW_AI_Backend/coordinator
+JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 ./gradlew bootRun
+```
+
+4. 启动 Worker：
+```bash
+cd EW_AI_Backend/worker
+python -m worker.main --serve --port 50051
+```
+
+5. 启动 Gateway：
+```bash
+cd EW_AI_Backend/gateway
+./gradlew bootRun
+```
+
+6. 使用 `curl` 验证接口（示例）：
+```bash
+curl -X POST http://localhost:8080/api/v1/inference/stream \
+  -H "Content-Type: application/json" \
+  -d '{"modelId": "furina", "prompt": "你好"}' --no-buffer
+```
+
+### 2) Docker / Docker Compose（快速生产/测试）
+
+```bash
+cd EW_AI_Backend/deploy
+cp .env.example .env
+# 编辑 .env 填写 API Key / Coordinator / Worker 配置
+vim .env
+
+# 构建镜像并启动（默认包含 Gateway + Coordinator + Worker）
+docker compose up -d --build
+
+# 查看日志
+docker compose logs -f gateway
+```
+
+### 3) 使用 CLI（`./ew`）
+
+CLI `ew` 提供多种便捷操作：
+
+```bash
+./ew setup --engine cuda-vllm                # 一键初始化 (Conda/依赖/构建)
+./ew start --engine cuda-vllm --model furina # 启动服务
+./ew start -d                                # 后台运行
+./ew stop                                     # 停止所有服务
+./ew test unit                                # 运行单元测试
+```
+
+### 4) 模型管理（添加 / 更新）
+
+编辑 `EW_AI_Backend/deploy/config.json`：
+
+```json
+{
+  "models": {
+    "furina": {
+      "engine": "cuda-vllm",
+      "model_path": "deepseek-ai/deepseek-llm-7b-chat",
+      "adapter_path": "/checkpoints/furina_lora",
+      "max_model_len": 8192
+    }
+  }
+}
+```
+
+编辑后重新加载或重启 Worker。
+
+### 5) 推理接口示例（SSE 实时流）
+
+```bash
+curl -N -H "Content-Type: application/json" -X POST \
+  http://localhost:8080/api/v1/inference/stream \
+  -d '{"modelId": "furina", "prompt": "请描述一下未来 AI 的样子"}'
+```
+
+### 6) 训练接口示例
+
+```bash
+curl -H "Content-Type: application/json" -X POST http://localhost:8080/api/v1/training/start \
+  -d '{"baseModel": "deepseek-ai/deepseek-llm-7b-chat", "outputDir": "/checkpoints/furina_lora", "datasetPath": "/data/train.json"}'
+```
+
+### 7) 运行测试
+
+Python Worker 单元测试：
+```bash
+cd EW_AI_Backend/worker
+pytest tests/ -q
+```
+
+Kotlin Gateway / Coordinator 测试：
+```bash
+cd EW_AI_Backend/gateway
+./gradlew test
+
+cd EW_AI_Backend/coordinator
+./gradlew test
+```
+
+更多高级用法见 `TESTING.md` 或 `CONTRIBUTING.md`。
+
 ## �� 架构
 
 ```
@@ -215,6 +339,54 @@ VLLM_GPU_MEM=0.9             # GPU 显存使用率
 # 运行所有测试
 ./ew test all
 ```
+
+## 📚 文档与设计
+
+本仓库包含以下关键文档：
+- `EW_AI_Backend/ARCHITECTURE.md` - 架构说明（Gateway / Coordinator / Worker）
+- `EW_AI_Backend/DEPLOY.md` - 部署与 Docker Compose 说明
+- `TESTING.md` - 测试说明（本地与 CI）
+- `CONTRIBUTING.md` - 提交与版本管理规则（四段式版本号 + 后缀）
+
+建议在提交前运行以下命令以确保本地环境一致：
+
+```bash
+# Worker 单元测试
+cd EW_AI_Backend/worker
+pytest tests/ -q
+
+# Gateway 单元测试（Gradle）
+cd ../gateway
+./gradlew test
+
+# Coordinator 单元测试（Gradle）
+cd ../coordinator
+./gradlew test
+```
+
+
+## 🏷 版本号规范与提交格式
+
+本项目采用 **四段式版本号** 并配合后缀来指示稳定性，例子： `[x.y.z.n-Alpha]`。
+
+- 第一段（x）：重大、**不兼容**变化（破坏性重构）
+- 第二段（y）：向后兼容的新功能（feature）
+- 第三段（z）：Bug 修复与优化
+- 第四段（n）：构建/测试次数（递增）
+
+后缀说明：
+- `PreAlpha`：功能不完整、仍处于设计早期
+- `Alpha`：大部分功能可用，开始第一次测试
+- `Beta`：功能实现完整，展开更广泛测试
+- `RC` / `Release`：可用于生产或候选发布
+
+提交消息与版本号格式（示例）：
+
+`[2.1.1.2-Alpha] refactor(worker): API, async, telemetry, security and performance improvements`
+
+请在提交中包含英文与中文说明（英文在前，空一行，随后中文），并将版本号用方括号完整包围在一行开头，标题与版本号同一行（版本号在前）。
+
+更多贡献规范见 `CONTRIBUTING.md`。
 
 ## 📝 版本历史
 

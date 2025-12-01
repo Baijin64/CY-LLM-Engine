@@ -78,3 +78,51 @@ pip-wheel-metadata/
 credentials/
 secrets/
 /deploy_tool
+
+# ------------------------------------------------------------------
+# Kotlin / Java / Gradle / IDEA (ignore intermediate/generated files)
+# ------------------------------------------------------------------
+# Compiled class files and archives
+*.class
+*.jar
+*.war
+*.ear
+*.aar
+
+# IDE and build directories (IntelliJ/Android Studio)
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+**/out/
+
+# Gradle build caches and outputs (module-specific build folders)
+.gradle/
+build/
+**/build/
+
+# Kotlin compiler caches and metadata
+.kotlinc/
+.kotlin/
+.kotlin_module
+*.kotlin_metadata
+kotlin-tooling-metadata.json
+
+# Kapt (Kotlin annotation processing) intermediate and generated sources
+kapt/
+kaptKotlin/
+**/kapt/
+**/kaptKotlin/
+**/generated/
+
+# JVM artifacts
+*.class
+*.apk
+*.keystore
+
+# Gradle wrapper generated files
+/.gradle
+
+# Prevent accidentally committing local JetBrains config for Kotlin multi-platform
+*.kts.cache
