@@ -101,6 +101,7 @@ out/
 .gradle/
 build/
 **/build/
+**/bin/
 
 # Kotlin compiler caches and metadata
 .kotlinc/
