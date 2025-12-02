@@ -26,6 +26,7 @@ DEFAULT_PYTHON_VERSION="${EW_PYTHON_VERSION:-3.10}"
 DEFAULT_PORT="${EW_PORT:-8080}"
 DEFAULT_WORKER_PORT="${EW_WORKER_PORT:-50051}"
 DEFAULT_ENGINE="${EW_ENGINE:-cuda-vllm}"
+# 向后兼容: 支持新的 CY_LLM_* 环境变量, 如果它们被设置则映射到旧的 EW_* 变量[ -n "" ] && export EW_PORT=""[ -n "" ] && export EW_WORKER_PORT=""[ -n "" ] && export EW_CONDA_ENV=""[ -n "" ] && export EW_PYTHON_VERSION=""[ -n "" ] && export EW_ENGINE=""[ -n "" ] && export EW_MODEL=""[ -n "" ] && export EW_INTERNAL_TOKEN=""[ -n "" ] && export EW_API_KEY=""
 
 # =============================================================================
 # 辅助函数
@@ -69,6 +70,7 @@ cmd_setup() {
     local env_name="$DEFAULT_ENV_NAME"
     local python_version="$DEFAULT_PYTHON_VERSION"
     local engine="$DEFAULT_ENGINE"
+# 向后兼容: 支持新的 CY_LLM_* 环境变量, 如果它们被设置则映射到旧的 EW_* 变量[ -n "" ] && export EW_PORT=""[ -n "" ] && export EW_WORKER_PORT=""[ -n "" ] && export EW_CONDA_ENV=""[ -n "" ] && export EW_PYTHON_VERSION=""[ -n "" ] && export EW_ENGINE=""[ -n "" ] && export EW_MODEL=""[ -n "" ] && export EW_INTERNAL_TOKEN=""[ -n "" ] && export EW_API_KEY=""
     local skip_gradle=false
     
     while [[ $# -gt 0 ]]; do
@@ -150,6 +152,7 @@ cmd_start() {
     local port="$DEFAULT_PORT"
     local worker_port="$DEFAULT_WORKER_PORT"
     local engine="$DEFAULT_ENGINE"
+# 向后兼容: 支持新的 CY_LLM_* 环境变量, 如果它们被设置则映射到旧的 EW_* 变量[ -n "" ] && export EW_PORT=""[ -n "" ] && export EW_WORKER_PORT=""[ -n "" ] && export EW_CONDA_ENV=""[ -n "" ] && export EW_PYTHON_VERSION=""[ -n "" ] && export EW_ENGINE=""[ -n "" ] && export EW_MODEL=""[ -n "" ] && export EW_INTERNAL_TOKEN=""[ -n "" ] && export EW_API_KEY=""
     local model=""
     local daemon=false
     
@@ -216,6 +219,7 @@ cmd_worker() {
     local env_name="$DEFAULT_ENV_NAME"
     local port="$DEFAULT_WORKER_PORT"
     local engine="$DEFAULT_ENGINE"
+# 向后兼容: 支持新的 CY_LLM_* 环境变量, 如果它们被设置则映射到旧的 EW_* 变量[ -n "" ] && export EW_PORT=""[ -n "" ] && export EW_WORKER_PORT=""[ -n "" ] && export EW_CONDA_ENV=""[ -n "" ] && export EW_PYTHON_VERSION=""[ -n "" ] && export EW_ENGINE=""[ -n "" ] && export EW_MODEL=""[ -n "" ] && export EW_INTERNAL_TOKEN=""[ -n "" ] && export EW_API_KEY=""
     local model=""
     local serve=true
     
@@ -256,6 +260,7 @@ cmd_docker() {
     local action="${1:-up}"
     shift || true
     local engine="$DEFAULT_ENGINE"
+# 向后兼容: 支持新的 CY_LLM_* 环境变量, 如果它们被设置则映射到旧的 EW_* 变量[ -n "" ] && export EW_PORT=""[ -n "" ] && export EW_WORKER_PORT=""[ -n "" ] && export EW_CONDA_ENV=""[ -n "" ] && export EW_PYTHON_VERSION=""[ -n "" ] && export EW_ENGINE=""[ -n "" ] && export EW_MODEL=""[ -n "" ] && export EW_INTERNAL_TOKEN=""[ -n "" ] && export EW_API_KEY=""
     local scale=1
     
     while [[ $# -gt 0 ]]; do
