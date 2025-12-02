@@ -7,35 +7,41 @@
 ## ✨ 特性
 
 - **四种推理引擎**: `cuda-vllm` / `cuda-trt` / `ascend-vllm` / `ascend-mindie`
-- **一键部署**: 统一的 `./cy-llm` 命令行工具（兼容 `./ew`）
+- **一键部署**: 统一的 `./cy-llm` 命令行工具（兼容 `./ew`，`ew` 将逐步弃用）
 - **流式推理**: SSE 实时流式返回
 - **企业级网关**: Kotlin + Spring WebFlux 响应式架构
 - **弹性伸缩**: 支持多 Worker 实例
 - **双平台支持**: NVIDIA CUDA 与 华为 Ascend NPU
 
 ## 🚀 快速开始
-
 ### 30 秒启动
-
-```bash
+### 30 秒启动
 # 1. 初始化环境
 ./cy-llm setup --engine cuda-vllm
-
-# 2. 启动服务
-./cy-llm start --model deepseek-v3
-```
-
-服务将在 `http://localhost:8080` 启动。
-
-### 测试推理
-
 ```bash
-curl -X POST http://localhost:8080/api/v1/inference/stream \
-  -H "Content-Type: application/json" \
-  -d '{"modelId": "deepseek-v3", "prompt": "你好"}' \
-  --no-buffer
+# 1. 初始化环境
+cd CY_LLM_Backend/worker
+./cy-llm setup --engine cuda-vllm
+### 3) 使用 CLI（`./cy-llm`，兼容 `./ew`）
+  ./cy-llm setup --engine cuda-vllm       # 初始化
+  ./cy-llm start --model qwen2.5-72b      # 启动指定模型
 ```
+cd CY_LLM_Backend/worker
 
+cd CY_LLM_Backend/gateway
+服务将在 `http://localhost:8080` 启动。
+cd CY_LLM_Backend/coordinator
+
+cd CY_LLM_Backend/deploy
+CLI `cy-llm`（兼容 `ew`）提供多种便捷操作：
+  ./cy-llm start --engine cuda-vllm --model furina # 启动服务
+  CY_LLM_MODEL=deepseek-v3     # 默认模型（优先）
+  ./cy-llm stop                                     # 停止所有服务
+  ./cy-llm test unit                                # 运行单元测试
+  ./cy-llm test integration
+  ./cy-llm test unit
+  ./cy-llm test all
+├── cy-llm                      # 🔧 统一 CLI 命令行工具 (兼容 `ew`)
 ## 📦 安装
 
 ### 环境要求
