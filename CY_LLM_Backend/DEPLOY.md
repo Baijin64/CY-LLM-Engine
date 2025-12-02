@@ -1,8 +1,8 @@
-# EW AI 部署指南
+# CY-LLM 部署指南
 
 ## 项目概述
 
-EW AI 是一个支持 NVIDIA CUDA 和华为 Ascend NPU 的 AI 推理与训练服务，包含：
+CY-LLM 是一个支持 NVIDIA CUDA 和华为 Ascend NPU 的 AI 推理与训练服务，包含：
 
 - **Gateway**：Kotlin/Spring Boot 网关，提供 REST API
 - **Worker**：Python 推理/训练引擎，支持 gRPC 通信

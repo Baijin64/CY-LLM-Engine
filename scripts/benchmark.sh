@@ -20,7 +20,7 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 
 echo -e "${CYAN}========================================${NC}"
-echo -e "${CYAN}  EW AI Gateway 压力测试${NC}"
+echo -e "${CYAN}  CY-LLM Gateway 压力测试${NC}"
 echo -e "${CYAN}========================================${NC}"
 echo ""
 echo "Endpoint: $ENDPOINT"

@@ -42,9 +42,9 @@ from typing import Any, Dict, Optional
 
 class CYLLMWorkerError(Exception):
     """
-    EW Worker 异常基类。
-    
-    所有 Worker 模块的异常都应继承此类。
+    CY-LLM Worker 异常基类。
+
+    所有 Worker 模块的异常都应继承此类。为向后兼容，保留 `EWWorkerError`/`EWWorkerException` 别名。
     """
     
     def __init__(

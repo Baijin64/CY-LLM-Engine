@@ -10,7 +10,7 @@ PROTO_DIR="$PROJECT_ROOT/proto"
 WORKER_OUT="$PROJECT_ROOT/worker/proto_gen"
 GATEWAY_OUT="$PROJECT_ROOT/gateway/src/main/kotlin"
 
-echo "=== EW AI Proto Generator ==="
+echo "=== CY-LLM Proto Generator ==="
 echo "Proto 目录: $PROTO_DIR"
 
 # 创建输出目录
