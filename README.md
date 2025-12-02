@@ -1,8 +1,8 @@
-# Element Warfare AI
+# CY-LLM Engine
 
 > 🚀 **高性能** · **使用简洁** · **高度自定义** 的完整 AI 服务系统
 
-一个支持多种推理引擎（vLLM / TensorRT-LLM / MindIE）、多种硬件平台（NVIDIA GPU / 华为 Ascend NPU）的统一 AI 推理后端。
+一个支持多种推理引擎（vLLM (vLLM for Ascend) / TensorRT-LLM / MindIE）、多种硬件平台（NVIDIA GPU / 华为 Ascend NPU）的统一 AI 推理后端。
 
 ## ✨ 特性
 
@@ -51,8 +51,8 @@ curl -X POST http://localhost:8080/api/v1/inference/stream \
 
 ```bash
 # 克隆仓库
-git clone https://github.com/your-repo/EW_AI_Deployment.git
-cd EW_AI_Deployment
+git clone https://github.com/Baijin64/CY-LLM-Engine.git
+cd CY-LLM-Engine
 
 # 初始化环境
 ./ew setup
@@ -64,7 +64,7 @@ cd EW_AI_Deployment
 ### 方式二：Docker 部署 (推荐生产)
 
 ```bash
-cd EW_AI_Backend/deploy
+cd CY-LLM-Engine
 
 # 配置环境变量
 cp .env.example .env
