@@ -16,11 +16,11 @@ COPY coordinator/gradlew coordinator/gradlew
 COPY coordinator/gradle coordinator/gradle/
 RUN chmod +x coordinator/gradlew
 
-# Ensure curl is present and download a Linux protoc-gen-grpc-java binary into PATH for the build
-RUN apk add --no-cache curl && \
-		curl -fSL -o /usr/local/bin/protoc-gen-grpc-java \
-			https://repo1.maven.org/maven2/io/grpc/protoc-gen-grpc-java/1.65.1/protoc-gen-grpc-java-1.65.1-linux-x86_64.exe && \
-		chmod +x /usr/local/bin/protoc-gen-grpc-java
+# Ensure curl is present (Debian based image) and download a Linux protoc-gen-grpc-java binary into PATH for the build
+RUN apt-get update && apt-get install -y curl ca-certificates \
+		&& curl -fSL -o /usr/local/bin/protoc-gen-grpc-java \
+			https://repo1.maven.org/maven2/io/grpc/protoc-gen-grpc-java/1.65.1/protoc-gen-grpc-java-1.65.1-linux-x86_64.exe \
+		&& chmod +x /usr/local/bin/protoc-gen-grpc-java
 
 # 复制构建文件
 COPY coordinator/build.gradle.kts coordinator/
@@ -50,16 +50,16 @@ FROM eclipse-temurin:21-jre
 LABEL maintainer="CY-LLM Team"
 LABEL description="Element Warfare AI Coordinator Service"
 
-# 安装运行时依赖
-RUN apk add --no-cache curl
+# 安装运行时依赖 (Debian-based image)
+RUN apt-get update && apt-get install -y curl ca-certificates
 
 WORKDIR /app
 
 # 从构建阶段复制 JAR
 COPY --from=builder /app/coordinator/build/libs/*.jar app.jar
 
-# 创建非 root 用户
-RUN addgroup -S cyllm && adduser -S cyllm -G cyllm
+# 创建非 root 用户 (groupadd + useradd for Debian-based images)
+RUN groupadd -r cyllm && useradd -r -g cyllm -M -s /sbin/nologin cyllm || true
 USER cyllm
 
 # 环境变量
