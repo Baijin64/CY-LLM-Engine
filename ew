@@ -21,11 +21,11 @@ WORKER_DIR="$BACKEND_DIR/worker"
 DEPLOY_DIR="$BACKEND_DIR/deploy"
 
 # 默认配置
-DEFAULT_ENV_NAME="${EW_CONDA_ENV:-ew_ai_worker}"
-DEFAULT_PYTHON_VERSION="${EW_PYTHON_VERSION:-3.10}"
-DEFAULT_PORT="${EW_PORT:-8080}"
-DEFAULT_WORKER_PORT="${EW_WORKER_PORT:-50051}"
-DEFAULT_ENGINE="${EW_ENGINE:-cuda-vllm}"
+DEFAULT_ENV_NAME="${CY_LLM_CONDA_ENV:-${EW_CONDA_ENV:-ew_ai_worker}}"
+DEFAULT_PYTHON_VERSION="${CY_LLM_PYTHON_VERSION:-${EW_PYTHON_VERSION:-3.10}}"
+DEFAULT_PORT="${CY_LLM_PORT:-${EW_PORT:-8080}}"
+DEFAULT_WORKER_PORT="${CY_LLM_WORKER_PORT:-${EW_WORKER_PORT:-50051}}"
+DEFAULT_ENGINE="${CY_LLM_ENGINE:-${EW_ENGINE:-cuda-vllm}}"
 # 向后兼容: 支持新的 CY_LLM_* 环境变量, 如果它们被设置则映射到旧的 EW_* 变量
 [ -n "${CY_LLM_PORT:-}" ] && export EW_PORT="${CY_LLM_PORT}"
 [ -n "${CY_LLM_WORKER_PORT:-}" ] && export EW_WORKER_PORT="${CY_LLM_WORKER_PORT}"
@@ -195,7 +195,9 @@ cmd_start() {
     info "Python: $python_path"
     
     export EW_ENGINE="$engine"
+        export CY_LLM_ENGINE="$engine"
     [[ -n "$model" ]] && export EW_MODEL="$model"
+        [[ -n "$model" ]] && export CY_LLM_MODEL="$model"
     
     if [[ "$daemon" == true ]]; then
         info "后台模式启动..."
@@ -245,7 +247,9 @@ cmd_worker() {
     local conda_cmd=$(get_conda)
     
     export EW_ENGINE="$engine"
+        export CY_LLM_ENGINE="$engine"
     [[ -n "$model" ]] && export EW_MODEL="$model"
+        [[ -n "$model" ]] && export CY_LLM_MODEL="$model"
     
     info "Engine: $engine"
     info "Port: $port"
@@ -281,6 +285,7 @@ cmd_docker() {
     cd "$DEPLOY_DIR"
     
     export EW_ENGINE="$engine"
+        export CY_LLM_ENGINE="$engine"
     
     case "$action" in
         up)
@@ -361,8 +366,8 @@ cmd_status() {
     ss -tlnp 2>/dev/null | grep -E ":8080|:50051" || echo "  无相关端口监听"
     
     echo -e "\n${CYAN}环境变量:${NC}"
-    echo "  EW_ENGINE=${EW_ENGINE:-未设置}"
-    echo "  EW_CONDA_ENV=${EW_CONDA_ENV:-$DEFAULT_ENV_NAME}"
+    echo "  CY_LLM_ENGINE=${CY_LLM_ENGINE:-${EW_ENGINE:-未设置}} (EW_ENGINE)"
+    echo "  CY_LLM_CONDA_ENV=${CY_LLM_CONDA_ENV:-${EW_CONDA_ENV:-$DEFAULT_ENV_NAME}} (EW_CONDA_ENV)"
 }
 
 # =============================================================================
@@ -466,9 +471,9 @@ CY-LLM Engine - 统一部署命令行工具
   ./ew status
 
 环境变量:
-  EW_ENGINE         默认推理引擎
-  EW_CONDA_ENV      默认 Conda 环境名
-  EW_PORT           默认 Gateway 端口
+  CY_LLM_ENGINE / EW_ENGINE         默认推理引擎
+  CY_LLM_CONDA_ENV / EW_CONDA_ENV      默认 Conda 环境名
+  CY_LLM_PORT / EW_PORT           默认 Gateway 端口
   EW_WORKER_PORT    默认 Worker 端口
 
 更多信息: https://github.com/your-repo/CY-LLM-Engine
