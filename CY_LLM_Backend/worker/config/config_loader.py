@@ -329,7 +329,7 @@ def load_worker_config(registry_path: Optional[str] = None) -> WorkerConfig:
 
 def print_config_help():
     """打印配置帮助信息"""
-        help_text = """
+    help_text = """
 CY-LLM Worker 配置说明
 =====================
 
