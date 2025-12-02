@@ -273,7 +273,7 @@ cd EW_AI_Backend/coordinator
 ## �� 项目结构
 
 ```
-CY-LLM-Engine/
+EW_AI_Deployment/
 ├── ew                          # 🔧 统一 CLI 工具
 ├── EW_AI_Backend/
 │   ├── gateway/                # Kotlin Gateway 服务
