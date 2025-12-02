@@ -21,7 +21,7 @@ from typing import Any, Dict, Generator, List, Optional
 
 from .abstract_engine import BaseEngine
 
-LOGGER = logging.getLogger("ew.worker.engines.vllm_ascend")
+LOGGER = logging.getLogger("cy_llm.worker.engines.vllm_ascend")
 
 # 延迟导入标记
 _vllm_ascend_imported = False

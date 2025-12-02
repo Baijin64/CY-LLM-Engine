@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional
 
-LOGGER = logging.getLogger("ew.worker.training.model.lora")
+LOGGER = logging.getLogger("cy_llm.worker.training.model.lora")
 
 # 延迟导入
 _peft_imported = False

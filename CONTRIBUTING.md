@@ -20,12 +20,8 @@
 4. 提交并在 PR 描述中说明兼容性、需要 REVIEW 的点与测试策略
 
 ## 测试要求
-- Python: 使用 `pytest`，测试目录：`CY_LLM_Backend/worker/tests`。
-- Kotlin: 使用 Gradle（`./gradlew test`）运行 Gateway/Coordinator 的测试。
-- CI 将执行：`python -m pytest` 与 `./gradlew test`。
-
+ Python: 使用 `pytest`，测试目录：`CY_LLM_Backend/worker/tests`。
 ## 风险与回退策略
-- 如果变更包含破坏性修改，请在 PR 中注明升级步骤与兼容性说明。
 
 ## 代码风格与质量
 - Python: 遵循 PEP8，建议使用 `black`、`ruff`、`mypy`。

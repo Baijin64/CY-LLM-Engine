@@ -126,7 +126,7 @@ class TestEnvironmentOverrides:
                 del os.environ['CY_LLM_GRPC_PORT']
 
     def test_env_override_engine(self):
-        """EW_ENGINE 环境变量应被识别"""
+        """CY_LLM_ENGINE 环境变量应被识别"""
         original = os.environ.get('CY_LLM_ENGINE')
         
         try:
@@ -150,7 +150,7 @@ class TestEnvironmentOverrides:
             # reload config_loader to re-run the mapping code executed at import time
             import worker.config.config_loader as loader
             importlib.reload(loader)
-            # after reload, EW_ENGINE should be set from CY_LLM_ENGINE
+            # after reload, CY_LLM_ENGINE should be recognized by loader
             # 应直接读取到 CY_LLM_ENGINE 的值
             assert os.environ.get('CY_LLM_ENGINE') == 'cuda-vllm'
             config = loader.load_worker_config()
@@ -166,7 +166,6 @@ class TestEnvironmentOverrides:
         """设置 CY_LLM_INTERNAL_TOKEN 并用于训练服务"""
         import importlib
         original_cy = os.environ.get('CY_LLM_INTERNAL_TOKEN')
-        original_ew = os.environ.get('CY_LLM_INTERNAL_TOKEN')
 
         try:
             os.environ['CY_LLM_INTERNAL_TOKEN'] = 'secret-token-abc'
@@ -184,7 +183,6 @@ class TestEnvironmentOverrides:
         """CY_LLM_INTERNAL_TOKEN 应被 worker.utils.auth.INTERNAL_TOKEN 使用"""
         import importlib
         original_cy = os.environ.get('CY_LLM_INTERNAL_TOKEN')
-        original_ew = os.environ.get('CY_LLM_INTERNAL_TOKEN')
 
         try:
             os.environ['CY_LLM_INTERNAL_TOKEN'] = 'secret-token-xyz'

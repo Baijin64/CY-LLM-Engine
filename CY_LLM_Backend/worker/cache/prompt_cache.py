@@ -24,7 +24,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Callable
 
-LOGGER = logging.getLogger("ew.worker.cache.prompt")
+LOGGER = logging.getLogger("cy_llm.worker.cache.prompt")
 
 # ============================================================================
 # 高性能哈希：优先使用 xxhash，回退到 hashlib
@@ -321,7 +321,7 @@ class RedisPromptCache:
     def __init__(
         self,
         redis_url: str = "redis://localhost:6379",
-        prefix: str = "ew:prompt:",
+        prefix: str = "cy_llm:prompt:",
         ttl_seconds: int = 3600,
         enabled: bool = True,
     ):

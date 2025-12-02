@@ -74,8 +74,8 @@
 cd deploy
 docker compose up -d
 
-# 或使用 ew 命令行工具
-./ew docker up
+# 或使用 cy-llm 命令行工具（兼容 ./ew）
+./cy-llm docker up
 
 # 查看日志
 docker compose logs -f coordinator
@@ -151,9 +151,7 @@ MODEL_REGISTRY_PATH=/path/to/models.json
 
 ### Gateway (环境变量)
 ```bash
-EW_COORDINATOR_HOST=localhost
 CY_LLM_COORDINATOR_HOST=localhost
-EW_COORDINATOR_PORT=50050
 CY_LLM_COORDINATOR_PORT=50050
 ```
 

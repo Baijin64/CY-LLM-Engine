@@ -1,4 +1,4 @@
-# EW_AI_Training 指南
+# CY_LLM_Training 指南
 
 本目录包含用于微调 DeepSeek（或其他兼容 LLM）以模仿特定角色语气与记忆/设定的工具链。
 
@@ -11,8 +11,8 @@
 建议创建一个新的 Conda/virtualenv 环境并安装依赖：
 
 ```bash
-conda create -n ew_train python=3.10 -y
-conda activate ew_train
+conda create -n cy_llm_train python=3.10 -y
+conda activate cy_llm_train
 pip install -r requirements.txt
 ```
 

@@ -40,7 +40,7 @@ from typing import Any, Dict, Optional
 # 基类
 # ============================================================================
 
-class EWWorkerError(Exception):
+class CYLLMWorkerError(Exception):
     """
     EW Worker 异常基类。
     
@@ -87,15 +87,16 @@ class EWWorkerError(Exception):
         }
 
 
-# 兼容别名
-EWWorkerException = EWWorkerError
+# 兼容别名: 保持对 EWWorkerError 的向后兼容
+EWWorkerException = CYLLMWorkerError
+EWWorkerError = CYLLMWorkerError
 
 
 # ============================================================================
 # 引擎相关异常
 # ============================================================================
 
-class EngineError(EWWorkerError):
+class EngineError(CYLLMWorkerError):
     """引擎相关异常基类"""
     pass
 
@@ -153,7 +154,7 @@ class EngineTimeoutError(EngineError):
 # 模型相关异常
 # ============================================================================
 
-class ModelError(EWWorkerError):
+class ModelError(CYLLMWorkerError):
     """模型相关异常基类"""
     pass
 
@@ -209,7 +210,7 @@ class ModelUnloadError(ModelError):
 # 配置相关异常
 # ============================================================================
 
-class ConfigError(EWWorkerError):
+class ConfigError(CYLLMWorkerError):
     """配置相关异常基类"""
     pass
 
@@ -255,7 +256,7 @@ class ConfigReloadError(ConfigError):
 # 训练相关异常
 # ============================================================================
 
-class TrainingError(EWWorkerError):
+class TrainingError(CYLLMWorkerError):
     """训练相关异常基类"""
     
     def __init__(self, message: str = "", epoch: Optional[int] = None, **kwargs):
@@ -321,7 +322,7 @@ class TrainingCheckpointError(TrainingError):
 # 资源相关异常
 # ============================================================================
 
-class ResourceError(EWWorkerError):
+class ResourceError(CYLLMWorkerError):
     """资源相关异常基类"""
     pass
 
@@ -380,7 +381,7 @@ class QuotaExceededError(ResourceError):
 # 通信相关异常
 # ============================================================================
 
-class CommunicationError(EWWorkerError):
+class CommunicationError(CYLLMWorkerError):
     """通信相关异常基类"""
     pass
 

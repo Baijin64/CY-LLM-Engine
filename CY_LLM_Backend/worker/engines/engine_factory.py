@@ -26,7 +26,7 @@ from typing import Callable, Dict, List, Optional, Type, Union
 from ..config.config_loader import HardwareProfile, WorkerConfig, detect_hardware, load_worker_config
 from .abstract_engine import BaseEngine
 
-LOGGER = logging.getLogger("ew.worker.engines.factory")
+LOGGER = logging.getLogger("cy_llm.worker.engines.factory")
 
 
 # ============================================================================

@@ -35,7 +35,7 @@ from .exceptions import (
 )
 from .utils.auth import verify_grpc_context
 
-LOGGER = logging.getLogger("ew.worker.grpc")
+LOGGER = logging.getLogger("cy_llm.worker.grpc")
 
 
 def _verify_internal_token(context: grpc.ServicerContext) -> bool:

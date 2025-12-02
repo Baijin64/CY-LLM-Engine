@@ -22,7 +22,7 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from .abstract_engine import BaseEngine
 
-LOGGER = logging.getLogger("ew.worker.engines.vllm_async")
+LOGGER = logging.getLogger("cy_llm.worker.engines.vllm_async")
 
 # 延迟导入 vLLM 异步组件
 _vllm_async_imported = False

@@ -298,8 +298,8 @@ def load_worker_config(registry_path: Optional[str] = None) -> WorkerConfig:
     """
     供 Worker 启动入口调用的统一配置装载函数。
     
-    优先级：
-      1. EW_ENGINE 或 EW_BACKEND 环境变量
+        优先级：
+            1. CY_LLM_ENGINE 或 CY_LLM_BACKEND 环境变量
       2. 根据硬件自动选择（CUDA -> cuda-vllm, Ascend -> ascend-vllm）
       
     Returns:
@@ -307,7 +307,7 @@ def load_worker_config(registry_path: Optional[str] = None) -> WorkerConfig:
     """
     hardware = detect_hardware()
     
-    # 支持两个环境变量名（EW_ENGINE 或 EW_BACKEND）
+    # 支持两个环境变量名（CY_LLM_ENGINE 或 CY_LLM_BACKEND）
     preferred = os.environ.get(ENV_ENGINE_TYPE) or os.environ.get(ENV_PREFERRED_BACKEND)
     backend = determine_backend(hardware, preferred)
     
@@ -329,16 +329,16 @@ def load_worker_config(registry_path: Optional[str] = None) -> WorkerConfig:
 
 def print_config_help():
     """打印配置帮助信息"""
-    help_text = """
-EW AI Worker 配置说明
+        help_text = """
+CY-LLM Worker 配置说明
 =====================
 
 环境变量：
-  EW_ENGINE / EW_BACKEND    引擎类型（见下方列表）
-  EW_MODEL_REGISTRY         JSON 格式的模型注册表
-  EW_MODEL_REGISTRY_PATH    模型注册表文件路径
-  EW_DEFAULT_MODEL          默认模型（HuggingFace ID 或本地路径）
-  EW_DEFAULT_ADAPTER        默认 LoRA 适配器路径
+    CY_LLM_ENGINE / CY_LLM_BACKEND    引擎类型（见下方列表）
+    CY_LLM_MODEL_REGISTRY         JSON 格式的模型注册表
+    CY_LLM_MODEL_REGISTRY_PATH    模型注册表文件路径
+    CY_LLM_DEFAULT_MODEL          默认模型（HuggingFace ID 或本地路径）
+    CY_LLM_DEFAULT_ADAPTER        默认 LoRA 适配器路径
 
 支持的引擎类型：
   cuda-vllm       NVIDIA GPU + vLLM（通用，高性能，推荐）
@@ -349,9 +349,9 @@ EW AI Worker 配置说明
   ascend          旧版兼容（transformers）
 
 示例：
-  export EW_ENGINE=cuda-vllm
-  export EW_DEFAULT_MODEL=deepseek-ai/deepseek-llm-7b-chat
-  python -m worker.main
+    export CY_LLM_ENGINE=cuda-vllm
+    export CY_LLM_DEFAULT_MODEL=deepseek-ai/deepseek-llm-7b-chat
+    python -m worker.main
 """
     print(help_text)
 

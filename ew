@@ -21,7 +21,7 @@ WORKER_DIR="$BACKEND_DIR/worker"
 DEPLOY_DIR="$BACKEND_DIR/deploy"
 
 # 默认配置
-DEFAULT_ENV_NAME="${CY_LLM_CONDA_ENV:-ew_ai_worker}"
+DEFAULT_ENV_NAME="${CY_LLM_CONDA_ENV:-cy_llm_worker}"
 DEFAULT_PYTHON_VERSION="${CY_LLM_PYTHON_VERSION:-3.10}"
 DEFAULT_PORT="${CY_LLM_PORT:-8080}"
 DEFAULT_WORKER_PORT="${CY_LLM_WORKER_PORT:-50051}"
@@ -139,8 +139,8 @@ cmd_setup() {
     echo ""
     success "✨ 环境初始化完成！"
     echo ""
-    echo -e "下一步: ${CYAN}./ew start${NC} 启动服务"
-    echo -e "        ${CYAN}./ew worker${NC} 仅启动 Worker"
+    echo -e "下一步: ${CYAN}./cy-llm start${NC} 启动服务 (兼容 ./ew)"
+    echo -e "        ${CYAN}./cy-llm worker${NC} 仅启动 Worker (兼容 ./ew)"
 }
 
 # =============================================================================
@@ -434,7 +434,7 @@ CY-LLM Engine - 统一部署命令行工具
   help        显示帮助信息
 
 常用选项:
-  --env NAME        Conda 环境名称 (默认: ew_ai_worker)
+    --env NAME        Conda 环境名称 (默认: cy_llm_worker)
   --engine TYPE     推理引擎类型:
                       cuda-vllm   - NVIDIA GPU + vLLM (推荐)
                       cuda-trt    - NVIDIA GPU + TensorRT-LLM

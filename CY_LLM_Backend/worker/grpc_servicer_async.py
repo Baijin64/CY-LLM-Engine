@@ -39,7 +39,7 @@ from .core.telemetry import Telemetry
 from .constants import GRPCDefaults
 from .utils.auth import verify_token, extract_token_from_metadata
 
-LOGGER = logging.getLogger("ew.worker.grpc.async")
+LOGGER = logging.getLogger("cy_llm.worker.grpc.async")
 
 
 def _verify_internal_token(context: aio.ServicerContext) -> bool:

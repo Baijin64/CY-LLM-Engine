@@ -18,7 +18,7 @@ from typing import Any, Callable, Dict, Generator, List, Optional
 
 import grpc
 
-LOGGER = logging.getLogger("ew.worker.training")
+LOGGER = logging.getLogger("cy_llm.worker.training")
 
 # 尝试导入训练相关依赖
 TRAINING_AVAILABLE = False

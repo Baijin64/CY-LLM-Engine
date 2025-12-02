@@ -2,10 +2,10 @@
 # CY-LLM Engine 服务编排配置
 #
 # 快速启动:
-#   ./ew docker up                          # 默认启动 (cuda-vllm)
-#   ./ew docker up --engine cuda-trt        # TensorRT 引擎
-#   ./ew docker up --engine ascend-vllm     # 华为 NPU
-#   ./ew docker up --scale 2                # 2 个 Worker 实例
+#   ./cy-llm docker up                          # 默认启动 (cuda-vllm)
+#   ./cy-llm docker up --engine cuda-trt        # TensorRT 引擎
+#   ./cy-llm docker up --engine ascend-vllm     # 华为 NPU
+#   ./cy-llm docker up --scale 2                # 2 个 Worker 实例
 #
 # 原始 Docker Compose 命令:
 #   docker compose up -d                    # NVIDIA Worker

@@ -19,7 +19,7 @@ from .models import (
     is_valid_engine,
 )
 
-LOGGER = logging.getLogger("ew.worker.config.validator")
+LOGGER = logging.getLogger("cy_llm.worker.config.validator")
 
 
 class ConfigValidationError(Exception):

@@ -14,19 +14,18 @@
 编辑 `application.yml` 或设置环境变量：
 
 ```bash
-export EW_SELF_DEPLOY_ENABLED=true
 export CY_LLM_SELF_DEPLOY_ENABLED=true
-export EW_WORKER_DIR=../worker
+export CY_LLM_SELF_DEPLOY_ENABLED=true
 export CY_LLM_WORKER_DIR=../worker
-export EW_CONDA_PATH=conda
+export CY_LLM_WORKER_DIR=../worker
 export CY_LLM_CONDA_PATH=conda
-export EW_CONDA_ENV=ew_ai_worker
-export CY_LLM_CONDA_ENV=ew_ai_worker
-export EW_PYTHON_VERSION=3.10
+export CY_LLM_CONDA_PATH=conda
+export CY_LLM_CONDA_ENV=cy_llm_worker
 export CY_LLM_PYTHON_VERSION=3.10
-export EW_WORKER_PORT=50051
+export CY_LLM_PYTHON_VERSION=3.10
 export CY_LLM_WORKER_PORT=50051
-export EW_AUTO_START=true
+export CY_LLM_WORKER_PORT=50051
+export CY_LLM_AUTO_START=true
 export CY_LLM_AUTO_START=true
 ```
 
@@ -56,7 +55,7 @@ java -jar build/libs/gateway-0.0.1-SNAPSHOT.jar \
 ========================================
 [1/3] 配置 Python 环境...
 检测到 Conda: conda (版本 23.x.x)
-创建 Conda 环境: ew_ai_worker (Python 3.10)
+创建 Conda 环境: cy_llm_worker (Python 3.10)
 ...
 [2/3] 启动 Worker 进程...
 启动 Worker: id=default, port=50051
@@ -78,7 +77,7 @@ cd deploy
 docker-compose up -d
 ```
 
-注意：设置 `EW_SELF_DEPLOY_ENABLED=false`，让 docker-compose 管理服务。
+注意：设置 `CY_LLM_SELF_DEPLOY_ENABLED=false`，让 docker-compose 管理服务。
 
 ### 2. 检查服务状态
 
@@ -93,7 +92,7 @@ curl -X GET http://localhost:8080/api/deploy/status
   "enabled": false,
   "initialized": false,
   "workerPort": 50051,
-  "condaEnvName": "ew_ai_worker",
+  "condaEnvName": "cy_llm_worker",
   "workerDir": "../worker"
 }
 ```
@@ -190,7 +189,7 @@ curl -X POST http://localhost:8080/api/deploy/reinstall
 # 检查 Conda 是否已安装
 which conda
 # 或设置完整路径
-export EW_CONDA_PATH=/opt/conda/bin/conda
+export CY_LLM_CONDA_PATH=/opt/conda/bin/conda
 export CY_LLM_CONDA_PATH=/opt/conda/bin/conda
 ```
 
@@ -202,9 +201,9 @@ export CY_LLM_CONDA_PATH=/opt/conda/bin/conda
 
 ```bash
 # 手动创建环境测试
-conda create -n ew_ai_worker python=3.10 -y
+conda create -n cy_llm_worker python=3.10 -y
 # 检查是否成功
-conda env list | grep ew_ai_worker
+conda env list | grep cy_llm_worker
 ```
 
 ### 问题 3：Worker 进程启动失败
@@ -218,7 +217,7 @@ conda env list | grep ew_ai_worker
 ls -la ../worker/requirements.txt
 # 手动尝试启动
 cd ../worker
-conda run -n ew_ai_worker python -m worker.main --port 50051
+conda run -n cy_llm_worker python -m worker.main --port 50051
 ```
 
 ### 问题 4：健康检查超时

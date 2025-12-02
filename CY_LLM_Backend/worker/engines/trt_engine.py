@@ -21,7 +21,7 @@ from typing import Any, Dict, Generator, List, Optional
 
 from .abstract_engine import BaseEngine
 
-LOGGER = logging.getLogger("ew.worker.engines.trt")
+LOGGER = logging.getLogger("cy_llm.worker.engines.trt")
 
 # TensorRT-LLM 导入标记
 _trt_imported = False

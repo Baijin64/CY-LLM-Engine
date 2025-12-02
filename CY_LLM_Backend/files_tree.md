@@ -1,10 +1,10 @@
-# EW_AI_Backend 文件结构（自动生成占位说明）
+# CY_LLM_Backend 文件结构（自动生成占位说明）
 
-以下为当前仓库 `EW_AI_Backend/` 的文件树概览，文件均为占位注释或配置示例，便于快速浏览项目架构。
+以下为当前仓库 `CY_LLM_Backend/` 的文件树概览，文件均为占位注释或配置示例，便于快速浏览项目架构。
 
-说明：旧的顶层脚本 `ai_backend.py` 已移除，替换为更稳健的 `scripts/diagnose_env.py`（位于项目根的 `scripts/` 目录中），并在 `EW_AI_Backend` 内保留占位资源与部署文件。
+说明：旧的顶层脚本 `ai_backend.py` 已移除，替换为更稳健的 `scripts/diagnose_env.py`（位于项目根的 `scripts/` 目录中），并在 `CY_LLM_Backend` 内保留占位资源与部署文件。
 
-EW_AI_Backend/
+CY_LLM_Backend/
 ├── proto/
 │   └── ai_service.proto                 # [Core] gRPC 定义：StreamPredict、ControlMessage、Backpressure（占位）
 ├── gateway/ (Kotlin Spring Boot)

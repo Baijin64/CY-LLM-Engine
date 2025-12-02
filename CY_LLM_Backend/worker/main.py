@@ -30,7 +30,7 @@ from worker.core.telemetry import Telemetry
 from worker.engines.engine_factory import create_engine
 
 
-LOGGER = logging.getLogger("ew.worker")
+LOGGER = logging.getLogger("cy_llm.worker")
 
 
 # 兼容旧 API 的函数名

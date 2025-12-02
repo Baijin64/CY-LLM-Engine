@@ -21,7 +21,7 @@ from typing import Any, Dict, Generator, List, Optional
 
 from .abstract_engine import BaseEngine
 
-LOGGER = logging.getLogger("ew.worker.engines.mindie")
+LOGGER = logging.getLogger("cy_llm.worker.engines.mindie")
 
 # 延迟导入标记
 _mindie_imported = False

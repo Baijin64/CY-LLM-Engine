@@ -27,7 +27,7 @@ from .loop import (
     create_callback_wrapper,
 )
 
-LOGGER = logging.getLogger("ew.worker.training.engine")
+LOGGER = logging.getLogger("cy_llm.worker.training.engine")
 
 
 @dataclass

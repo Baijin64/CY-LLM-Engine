@@ -12,7 +12,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
-LOGGER = logging.getLogger("ew.worker.training.loop.callbacks")
+LOGGER = logging.getLogger("cy_llm.worker.training.loop.callbacks")
 
 # 延迟导入
 _transformers_imported = False

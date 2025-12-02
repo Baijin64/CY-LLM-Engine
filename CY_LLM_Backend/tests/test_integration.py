@@ -158,7 +158,7 @@ def run_integration_test() -> None:
     base_model_path = input(f"基础模型 ID [默认 {base_model_default}]: ").strip() or base_model_default
 
     adapter_root_default = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "../../EW_AI_Training/checkpoints/furina_lora_v2")
+        os.path.join(os.path.dirname(__file__), "../../CY_LLM_Training/checkpoints/furina_lora_v2")
     )
     adapter_root = input(f"LoRA 根目录 [默认 {adapter_root_default}]: ").strip() or adapter_root_default
 
@@ -277,7 +277,7 @@ def main() -> None:
         "telemetry": run_telemetry_test,
     }
 
-    parser = argparse.ArgumentParser(description="EW AI Backend 测试入口")
+    parser = argparse.ArgumentParser(description="CY-LLM Engine 测试入口")
     parser.add_argument("--test", choices=choices.keys(), help="直接运行指定测试，无需交互菜单")
     args = parser.parse_args()
 

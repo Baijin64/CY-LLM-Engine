@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Any
 
-LOGGER = logging.getLogger("ew.worker.config.hot_reload")
+LOGGER = logging.getLogger("cy_llm.worker.config.hot_reload")
 
 # 尝试导入 watchdog（可选依赖）
 _HAS_WATCHDOG = False

@@ -23,7 +23,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, Generator, List, Optional, Tuple
 
-LOGGER = logging.getLogger("ew.worker.training.custom")
+LOGGER = logging.getLogger("cy_llm.worker.training.custom")
 
 
 class ScriptStatus(Enum):
@@ -100,7 +100,7 @@ class CustomScriptRunner:
     脚本进度输出格式（可选）：
     在脚本中输出以下格式的 JSON 行，将被自动解析：
     ```
-    {"ew_progress": {"epoch": 1, "step": 100, "loss": 0.5, "lr": 1e-5}}
+    {"cy_llm_progress": {"epoch": 1, "step": 100, "loss": 0.5, "lr": 1e-5}}
     ```
     """
 
@@ -424,21 +424,21 @@ class CustomScriptRunner:
         解析脚本输出中的 JSON 进度行
         
         支持格式：
-        1. {"ew_progress": {"epoch": 1, "loss": 0.5}}
-        2. EW_PROGRESS: {"epoch": 1, "loss": 0.5}
+        1. {"cy_llm_progress": {"epoch": 1, "loss": 0.5}}
+        2. CY_LLM_PROGRESS: {"epoch": 1, "loss": 0.5}
         """
         line = line.strip()
         
         try:
             # 格式 1: 纯 JSON
-            if line.startswith("{") and "ew_progress" in line.lower():
+            if line.startswith("{") and "cy_llm_progress" in line.lower():
                 data = json.loads(line)
-                if "ew_progress" in data:
-                    return data["ew_progress"]
+                if "cy_llm_progress" in data:
+                    return data["cy_llm_progress"]
             
             # 格式 2: 前缀标记
-            if line.upper().startswith("EW_PROGRESS:"):
-                json_str = line[12:].strip()
+            if line.upper().startswith("CY_LLM_PROGRESS:"):
+                json_str = line[16:].strip()
                 return json.loads(json_str)
                 
         except (json.JSONDecodeError, KeyError):

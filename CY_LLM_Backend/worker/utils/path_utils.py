@@ -15,7 +15,7 @@ import os
 from pathlib import Path
 from typing import List, Optional, Union
 
-LOGGER = logging.getLogger("ew.worker.utils.path")
+LOGGER = logging.getLogger("cy_llm.worker.utils.path")
 
 
 class PathTraversalError(ValueError):

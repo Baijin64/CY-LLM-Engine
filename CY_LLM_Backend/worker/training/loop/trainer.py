@@ -10,7 +10,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
-LOGGER = logging.getLogger("ew.worker.training.loop.trainer")
+LOGGER = logging.getLogger("cy_llm.worker.training.loop.trainer")
 
 # 延迟导入
 _trl_imported = False

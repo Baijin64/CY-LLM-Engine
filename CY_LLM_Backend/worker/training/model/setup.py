@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, Optional, Tuple
 
-LOGGER = logging.getLogger("ew.worker.training.model.setup")
+LOGGER = logging.getLogger("cy_llm.worker.training.model.setup")
 
 # 延迟导入
 _torch_imported = False

@@ -18,7 +18,7 @@ full_finetune.py
         --deepspeed ds_config_zero3.json
 
 进度输出格式（供 CustomScriptRunner 解析）：
-    {"ew_progress": {"epoch": 1, "step": 100, "loss": 2.5, "lr": 1e-5}}
+    {"cy_llm_progress": {"epoch": 1, "step": 100, "loss": 2.5, "lr": 1e-5}}
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
-LOGGER = logging.getLogger("ew.training.full_finetune")
+LOGGER = logging.getLogger("cy_llm.training.full_finetune")
 
 # 延迟导入重型依赖
 def import_training_deps():
@@ -114,7 +114,7 @@ class ProgressCallback(TrainerCallback):
     
     def _emit_progress(self, **kwargs):
         """输出 JSON 格式的进度信息"""
-        progress = {"ew_progress": {**kwargs, "job_id": self.job_id}}
+        progress = {"cy_llm_progress": {**kwargs, "job_id": self.job_id}}
         print(json.dumps(progress), flush=True)
 
 

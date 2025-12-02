@@ -21,7 +21,7 @@ from typing import Any, Dict, Generator, List, Optional
 
 from .abstract_engine import BaseEngine
 
-LOGGER = logging.getLogger("ew.worker.engines.vllm_cuda")
+LOGGER = logging.getLogger("cy_llm.worker.engines.vllm_cuda")
 
 # 延迟导入 vLLM，仅在实际使用时加载
 _vllm_imported = False

@@ -7,7 +7,7 @@
 ## ✨ 特性
 
 - **四种推理引擎**: `cuda-vllm` / `cuda-trt` / `ascend-vllm` / `ascend-mindie`
-- **一键部署**: 统一的 `./ew` 命令行工具
+- **一键部署**: 统一的 `./cy-llm` 命令行工具（兼容 `./ew`）
 - **流式推理**: SSE 实时流式返回
 - **企业级网关**: Kotlin + Spring WebFlux 响应式架构
 - **弹性伸缩**: 支持多 Worker 实例
@@ -19,10 +19,10 @@
 
 ```bash
 # 1. 初始化环境
-./ew setup --engine cuda-vllm
+./cy-llm setup --engine cuda-vllm
 
 # 2. 启动服务
-./ew start --model deepseek-v3
+./cy-llm start --model deepseek-v3
 ```
 
 服务将在 `http://localhost:8080` 启动。
@@ -55,14 +55,14 @@ git clone https://github.com/Baijin64/CY-LLM-Engine.git
 cd CY-LLM-Engine
 
 # 初始化环境
-./ew setup
+./cy-llm setup
 
-./ew setup --engine cuda-vllm
-./ew start
+./cy-llm setup --engine cuda-vllm
+./cy-llm start
 ```
 
 ### 方式二：Docker 部署 (推荐生产)
-./ew start --model deepseek-v3
+./cy-llm start --model deepseek-v3
 ```bash
 cd CY-LLM-Engine
 
@@ -71,7 +71,7 @@ cp .env.example .env
 vim .env  # 编辑配置
 
 # 启动服务
-./ew docker up
+./cy-llm docker up
 ```
 
 ## 🎯 引擎选择指南
@@ -85,19 +85,19 @@ vim .env  # 编辑配置
 
 ```bash
 # 使用 vLLM (默认)
-./ew start --engine cuda-vllm
+./cy-llm start --engine cuda-vllm
 
 # 使用 TensorRT-LLM
-./ew start --engine cuda-trt
+./cy-llm start --engine cuda-trt
 
 # 使用华为 Ascend
-./ew start --engine ascend-vllm
+./cy-llm start --engine ascend-vllm
 ```
 
 ## 📖 CLI 命令参考
 
 ```bash
-./ew <command> [options]
+./cy-llm <command> [options]
 
 git clone https://github.com/Baijin64/CY-LLM-Engine.git
   setup       初始化环境 (Conda + 依赖 + Gateway)
@@ -117,11 +117,11 @@ git clone https://github.com/Baijin64/CY-LLM-Engine.git
   -d, --daemon      后台运行
 
 示例:
-  ./ew setup --engine cuda-vllm       # 初始化
-  ./ew start --model qwen2.5-72b      # 启动指定模型
-  ./ew start -d                       # 后台启动
-  ./ew docker up --scale 2            # Docker 双 Worker
-  ./ew status                         # 查看状态
+  ./cy-llm setup --engine cuda-vllm       # 初始化
+  ./cy-llm start --model qwen2.5-72b      # 启动指定模型
+  ./cy-llm start -d                       # 后台启动
+  ./cy-llm docker up --scale 2            # Docker 双 Worker
+  ./cy-llm status                         # 查看状态
 ```
 
 ## 🛠 使用方法（详细）
@@ -183,14 +183,14 @@ docker compose up -d --build
 docker compose logs -f gateway
 ```
 
-### 3) 使用 CLI（`./ew`）
+### 3) 使用 CLI（`./cy-llm`，兼容 `ew`）
 # 核心配置（使用 CY_LLM_*）
-CLI `ew` 提供多种便捷操作：
+CLI `cy-llm`（兼容 `ew`）提供多种便捷操作：
 ```bash
-./ew start --engine cuda-vllm --model furina # 启动服务
+./cy-llm start --engine cuda-vllm --model furina # 启动服务
 CY_LLM_MODEL=deepseek-v3     # 默认模型（优先）
-./ew stop                                     # 停止所有服务
-./ew test unit                                # 运行单元测试
+./cy-llm stop                                     # 停止所有服务
+./cy-llm test unit                                # 运行单元测试
 ```
 
 ### 4) 模型管理（添加 / 更新）
@@ -273,7 +273,7 @@ cd CY_LLM_Backend/coordinator
 ```
 CY-LLM-Engine/
 ├── ew                          # 🔧 统一 CLI 工具
-├── EW_AI_Backend/
+├── CY_LLM_Backend/
 │   ├── gateway/                # Kotlin Gateway 服务
 │   │   └── src/main/kotlin/    # Spring WebFlux + gRPC
 │   │   │   ├── vllm_ascend_engine.py
@@ -317,13 +317,13 @@ VLLM_GPU_MEM=0.9             # GPU 显存使用率
 
 ```bash
 # 运行集成测试
-./ew test integration
+./cy-llm test integration
 
 # 运行单元测试
-./ew test unit
+./cy-llm test unit
 
 # 运行所有测试
-./ew test all
+./cy-llm test all
 ```
 
 ## 📚 文档与设计
