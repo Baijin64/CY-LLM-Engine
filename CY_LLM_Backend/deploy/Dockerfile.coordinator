@@ -25,11 +25,12 @@ COPY proto/ proto/
 
 # 下载依赖（利用 Docker 缓存）
 WORKDIR /app/coordinator
-RUN ./gradlew dependencies --no-daemon || true
+# Explicitly pass a compatible Java home to Gradle when building in the container
+RUN ./gradlew dependencies --no-daemon -Dorg.gradle.java.home=/opt/java/openjdk || true
 
 # 复制源代码并构建
 COPY coordinator/src src/
-RUN ./gradlew bootJar --no-daemon
+RUN ./gradlew bootJar --no-daemon -Dorg.gradle.java.home=/opt/java/openjdk
 
 # ========== 运行时镜像 ==========
 FROM eclipse-temurin:21-jre-alpine
