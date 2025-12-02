@@ -1,0 +1,19 @@
+name: Find Legacy EW References
+
+on:
+  push:
+    branches: [ main, refactor/rename-to-cy-llm ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  find-ew:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Run EW references check
+        run: |
+          set -e
+          ./scripts/find-ew-references.sh
+        shell: bash
