@@ -298,13 +298,13 @@ CY-LLM-Engine/
 ### 环境变量
 
 ```bash
-# 核心配置
-EW_ENGINE=cuda-vllm          # 推理引擎
-CY_LLM_ENGINE=cuda-vllm          # 推理引擎
-EW_PORT=8080                 # Gateway 端口
-CY_LLM_PORT=8080                 # Gateway 端口
-EW_MODEL=deepseek-v3         # 默认模型
-CY_LLM_MODEL=deepseek-v3         # 默认模型
+# 核心配置（优先使用 CY_LLM_*，向后兼容 EW_*）
+CY_LLM_ENGINE=cuda-vllm      # 推理引擎（优先）
+EW_ENGINE=cuda-vllm          # 向后兼容：旧变量名
+CY_LLM_PORT=8080             # Gateway 端口（优先）
+EW_PORT=8080                 # 向后兼容：旧变量名
+CY_LLM_MODEL=deepseek-v3     # 默认模型（优先）
+EW_MODEL=deepseek-v3         # 向后兼容：旧变量名
 
 # vLLM 配置
 VLLM_TP=1                    # 张量并行度
