@@ -2,7 +2,8 @@
 # Coordinator 服务 Dockerfile
 # 用于构建 Kotlin/Spring Boot 协调器服务
 
-FROM eclipse-temurin:21-jdk-alpine AS builder
+# Use a glibc-based Temurin image so native protoc-gen-grpc binaries can run (avoid musl/alpine)
+FROM eclipse-temurin:21-jdk AS builder
 
 WORKDIR /app
 
@@ -44,7 +45,7 @@ COPY coordinator/src src/
 RUN ./gradlew bootJar --no-daemon -Dorg.gradle.java.home=/opt/java/openjdk
 
 # ========== 运行时镜像 ==========
-FROM eclipse-temurin:21-jre-alpine
+FROM eclipse-temurin:21-jre
 
 LABEL maintainer="CY-LLM Team"
 LABEL description="Element Warfare AI Coordinator Service"
