@@ -309,6 +309,8 @@ VLLM_GPU_MEM=0.9             # GPU 显存使用率
 ```
 
 完整配置参见 `EW_AI_Backend/deploy/.env.example`。
+> 向后兼容说明：我们新增了 `CY_LLM_*` 前缀的环境变量（例如 `CY_LLM_PORT`, `CY_LLM_INTERNAL_TOKEN` 等）。CLI、docker-compose 与脚本都会同时支持 `CY_LLM_*` 与旧 `EW_*`，优先读取 `CY_LLM_*`。
+
 
 ### 模型配置
 
