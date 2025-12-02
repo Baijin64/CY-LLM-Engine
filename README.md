@@ -300,8 +300,11 @@ CY-LLM-Engine/
 ```bash
 # 核心配置
 EW_ENGINE=cuda-vllm          # 推理引擎
+CY_LLM_ENGINE=cuda-vllm          # 推理引擎
 EW_PORT=8080                 # Gateway 端口
+CY_LLM_PORT=8080                 # Gateway 端口
 EW_MODEL=deepseek-v3         # 默认模型
+CY_LLM_MODEL=deepseek-v3         # 默认模型
 
 # vLLM 配置
 VLLM_TP=1                    # 张量并行度
