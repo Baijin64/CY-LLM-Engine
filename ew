@@ -28,13 +28,21 @@ DEFAULT_WORKER_PORT="${CY_LLM_WORKER_PORT:-${EW_WORKER_PORT:-50051}}"
 DEFAULT_ENGINE="${CY_LLM_ENGINE:-${EW_ENGINE:-cuda-vllm}}"
 # 向后兼容: 支持新的 CY_LLM_* 环境变量, 如果它们被设置则映射到旧的 EW_* 变量
 [ -n "${CY_LLM_PORT:-}" ] && export EW_PORT="${CY_LLM_PORT}"
+[ -n "${EW_PORT:-}" ] && export CY_LLM_PORT="${EW_PORT}"
 [ -n "${CY_LLM_WORKER_PORT:-}" ] && export EW_WORKER_PORT="${CY_LLM_WORKER_PORT}"
+[ -n "${EW_WORKER_PORT:-}" ] && export CY_LLM_WORKER_PORT="${EW_WORKER_PORT}"
 [ -n "${CY_LLM_CONDA_ENV:-}" ] && export EW_CONDA_ENV="${CY_LLM_CONDA_ENV}"
+[ -n "${EW_CONDA_ENV:-}" ] && export CY_LLM_CONDA_ENV="${EW_CONDA_ENV}"
 [ -n "${CY_LLM_PYTHON_VERSION:-}" ] && export EW_PYTHON_VERSION="${CY_LLM_PYTHON_VERSION}"
+[ -n "${EW_PYTHON_VERSION:-}" ] && export CY_LLM_PYTHON_VERSION="${EW_PYTHON_VERSION}"
 [ -n "${CY_LLM_ENGINE:-}" ] && export EW_ENGINE="${CY_LLM_ENGINE}"
+[ -n "${EW_ENGINE:-}" ] && export CY_LLM_ENGINE="${EW_ENGINE}"
 [ -n "${CY_LLM_MODEL:-}" ] && export EW_MODEL="${CY_LLM_MODEL}"
+[ -n "${EW_MODEL:-}" ] && export CY_LLM_MODEL="${EW_MODEL}"
 [ -n "${CY_LLM_INTERNAL_TOKEN:-}" ] && export EW_INTERNAL_TOKEN="${CY_LLM_INTERNAL_TOKEN}"
+[ -n "${EW_INTERNAL_TOKEN:-}" ] && export CY_LLM_INTERNAL_TOKEN="${EW_INTERNAL_TOKEN}"
 [ -n "${CY_LLM_API_KEY:-}" ] && export EW_API_KEY="${CY_LLM_API_KEY}"
+[ -n "${EW_API_KEY:-}" ] && export CY_LLM_API_KEY="${EW_API_KEY}"
 
 
 # =============================================================================
