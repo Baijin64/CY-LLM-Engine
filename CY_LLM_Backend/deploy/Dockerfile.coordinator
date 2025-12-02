@@ -1,0 +1,56 @@
+# Dockerfile.coordinator
+# Coordinator 服务 Dockerfile
+# 用于构建 Kotlin/Spring Boot 协调器服务
+
+FROM eclipse-temurin:21-jdk-alpine AS builder
+
+WORKDIR /app
+
+# 复制 Gradle Wrapper
+COPY coordinator/gradlew coordinator/gradlew
+COPY coordinator/gradle coordinator/gradle/
+RUN chmod +x coordinator/gradlew
+
+# 复制构建文件
+COPY coordinator/build.gradle.kts coordinator/
+COPY coordinator/settings.gradle.kts coordinator/
+COPY coordinator/gradle.properties coordinator/
+
+# 复制 Proto 文件
+COPY proto/ proto/
+
+# 下载依赖（利用 Docker 缓存）
+WORKDIR /app/coordinator
+RUN ./gradlew dependencies --no-daemon || true
+
+# 复制源代码并构建
+COPY coordinator/src src/
+RUN ./gradlew bootJar --no-daemon
+
+# ========== 运行时镜像 ==========
+FROM eclipse-temurin:21-jre-alpine
+
+LABEL maintainer="CY-LLM Team"
+LABEL description="Element Warfare AI Coordinator Service"
+
+# 安装运行时依赖
+RUN apk add --no-cache curl
+
+WORKDIR /app
+
+# 从构建阶段复制 JAR
+COPY --from=builder /app/coordinator/build/libs/*.jar app.jar
+
+# 创建非 root 用户
+RUN addgroup -S ew && adduser -S ew -G ew
+USER ew
+
+# 环境变量
+ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
+ENV SPRING_PROFILES_ACTIVE=docker
+
+# 暴露端口
+EXPOSE 50050 8081
+
+# 启动命令
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]

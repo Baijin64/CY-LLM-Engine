@@ -1,0 +1,190 @@
+# docker-compose.yml
+# CY-LLM Engine 服务编排配置
+#
+# 快速启动:
+#   ./ew docker up                          # 默认启动 (cuda-vllm)
+#   ./ew docker up --engine cuda-trt        # TensorRT 引擎
+#   ./ew docker up --engine ascend-vllm     # 华为 NPU
+#   ./ew docker up --scale 2                # 2 个 Worker 实例
+#
+# 原始 Docker Compose 命令:
+#   docker compose up -d                    # NVIDIA Worker
+#   docker compose --profile ascend up -d   # 包含 Ascend Worker
+
+version: '3.8'
+
+services:
+  # ========== Redis 缓存/队列 ==========
+  redis:
+    image: redis:7-alpine
+    container_name: cy-llm-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    networks:
+      - cy-llm-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ========== Coordinator 协调器 ==========
+  coordinator:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.coordinator
+    image: cy-llm-coordinator:latest
+    container_name: cy-llm-coordinator
+    restart: unless-stopped
+    ports:
+      - "${COORDINATOR_GRPC_PORT:-50050}:50050"
+    environment:
+      - SPRING_DATA_REDIS_HOST=redis
+      - SPRING_DATA_REDIS_PORT=6379
+      - COORDINATOR_GRPC_PORT=50050
+      - CY_LLM_INTERNAL_TOKEN=${CY_LLM_INTERNAL_TOKEN:-}
+      - CY_LLM_ENGINE=${CY_LLM_ENGINE:-ascend-vllm}
+      - CY_LLM_MODEL=${CY_LLM_MODEL:-}
+      - CY_LLM_MODEL_REGISTRY=/etc/worker/models.json
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - cy-llm-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ========== Gateway 服务 ==========
+  gateway:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.gateway
+    image: cy-llm-gateway:latest
+    container_name: cy-llm-gateway
+    restart: unless-stopped
+    ports:
+      - "${CY_LLM_PORT:-8080}:8080"
+    environment:
+      # Coordinator 连接 (新架构)
+      - CY_LLM_COORDINATOR_HOST=${CY_LLM_COORDINATOR_HOST:-coordinator}
+      - CY_LLM_COORDINATOR_PORT=${CY_LLM_COORDINATOR_PORT:-50050}
+      # Worker 连接
+      - CY_LLM_WORKER_HOST=${CY_LLM_WORKER_HOST:-worker-nvidia}
+      - CY_LLM_WORKER_PORT=${CY_LLM_WORKER_PORT:-50051}
+      # 安全配置
+      - CY_LLM_SECURITY_ENABLED=${CY_LLM_SECURITY_ENABLED:-true}
+      - CY_LLM_API_KEY=${CY_LLM_API_KEY:-}
+      - CY_LLM_INTERNAL_TOKEN=${CY_LLM_INTERNAL_TOKEN:-}
+      - CY_LLM_ENGINE=${CY_LLM_ENGINE:-ascend-vllm}
+      - CY_LLM_MODEL=${CY_LLM_MODEL:-}
+      - CY_LLM_MODEL_REGISTRY=/etc/worker/models.json
+      # 配置文件
+      - CY_LLM_REGISTRY_PATH=/etc/gateway/config.json
+      - CY_LLM_COORDINATOR_HOST=${CY_LLM_COORDINATOR_HOST:-coordinator}
+      - CY_LLM_COORDINATOR_PORT=${CY_LLM_COORDINATOR_PORT:-50050}
+      - CY_LLM_WORKER_HOST=${CY_LLM_WORKER_HOST:-worker-nvidia}
+      - CY_LLM_WORKER_PORT=${CY_LLM_WORKER_PORT:-50051}
+      - CY_LLM_SECURITY_ENABLED=${CY_LLM_SECURITY_ENABLED:-true}
+      - CY_LLM_API_KEY=${CY_LLM_API_KEY:-}
+      - CY_LLM_INTERNAL_TOKEN=${CY_LLM_INTERNAL_TOKEN:-}
+      # JVM
+      - JAVA_OPTS=-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0
+    volumes:
+      - ./config.json:/etc/gateway/config.json:ro
+    depends_on:
+      coordinator:
+        condition: service_healthy
+    networks:
+      - cy-llm-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ========== NVIDIA Worker (cuda-vllm / cuda-trt) ==========
+  worker-nvidia:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.worker.nvidia
+      args:
+        - ENGINE=${CY_LLM_ENGINE:-cuda-vllm}
+    image: cy-llm-worker-nvidia:${CY_LLM_ENGINE:-cuda-vllm}
+    restart: unless-stopped
+    environment:
+      - CY_LLM_ENGINE=${CY_LLM_ENGINE:-cuda-vllm}
+      - CY_LLM_MODEL=${CY_LLM_MODEL:-}
+      - CY_LLM_MODEL_REGISTRY=/etc/worker/models.json
+      - CY_LLM_INTERNAL_TOKEN=${CY_LLM_INTERNAL_TOKEN:-}
+      # vLLM 配置
+      - VLLM_TENSOR_PARALLEL_SIZE=${VLLM_TP:-1}
+      - VLLM_GPU_MEMORY_UTILIZATION=${VLLM_GPU_MEM:-0.9}
+    volumes:
+      - ./models.json:/etc/worker/models.json:ro
+      - ${CY_LLM_MODEL_CACHE:-~/.cache/cy-llm/models}:/models
+      - ${CY_LLM_CHECKPOINT_DIR:-~/.cache/cy-llm/checkpoints}:/checkpoints
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks:
+      - cy-llm-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import grpc; exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+  # ========== Ascend Worker (ascend-vllm / ascend-mindie) ==========
+  worker-ascend:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.worker.ascend
+      args:
+        - ENGINE=${CY_LLM_ENGINE:-ascend-vllm}
+    image: cy-llm-worker-ascend:${CY_LLM_ENGINE:-ascend-vllm}
+    restart: unless-stopped
+    environment:
+      - CY_LLM_ENGINE=${CY_LLM_ENGINE:-ascend-vllm}
+      - CY_LLM_MODEL=${CY_LLM_MODEL:-}
+      - CY_LLM_MODEL_REGISTRY=/etc/worker/models.json
+      - CY_LLM_INTERNAL_TOKEN=${CY_LLM_INTERNAL_TOKEN:-}
+      # Ascend 配置
+      - ASCEND_VISIBLE_DEVICES=${ASCEND_VISIBLE_DEVICES:-0}
+    volumes:
+      - ./models.json:/etc/worker/models.json:ro
+      - ${CY_LLM_MODEL_CACHE:-~/.cache/cy-llm/models}:/models
+      - ${CY_LLM_CHECKPOINT_DIR:-~/.cache/cy-llm/checkpoints}:/checkpoints
+    devices:
+      - /dev/davinci0:/dev/davinci0
+      - /dev/davinci_manager:/dev/davinci_manager
+      - /dev/devmm_svm:/dev/devmm_svm
+      - /dev/hisi_hdc:/dev/hisi_hdc
+    networks:
+      - cy-llm-network
+    profiles:
+      - ascend
+
+# ========== 网络 ==========
+networks:
+  cy-llm-network:
+    driver: bridge
+
+# ========== 数据卷 ==========
+volumes:
+  model-cache:
+  checkpoints:
+  redis-data:

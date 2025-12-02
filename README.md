@@ -57,12 +57,12 @@ cd CY-LLM-Engine
 # 初始化环境
 ./ew setup
 
-# 启动服务
+./ew setup --engine cuda-vllm
 ./ew start
 ```
 
 ### 方式二：Docker 部署 (推荐生产)
-
+./ew start --model deepseek-v3
 ```bash
 cd CY-LLM-Engine
 
@@ -99,7 +99,7 @@ vim .env  # 编辑配置
 ```bash
 ./ew <command> [options]
 
-命令:
+git clone https://github.com/Baijin64/CY-LLM-Engine.git
   setup       初始化环境 (Conda + 依赖 + Gateway)
   start       启动完整服务 (Gateway + Worker)
   worker      仅启动 Worker
@@ -132,7 +132,7 @@ vim .env  # 编辑配置
 
 1. 准备 Python 环境并安装依赖：
 ```bash
-cd EW_AI_Backend/worker
+cd CY_LLM_Backend/worker
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -145,19 +145,19 @@ docker run -d --name redis -p 6379:6379 redis:7-alpine
 
 3. 启动 Coordinator（JDK 21）：
 ```bash
-cd EW_AI_Backend/coordinator
+cd CY_LLM_Backend/coordinator
 JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 ./gradlew bootRun
 ```
 
 4. 启动 Worker：
 ```bash
-cd EW_AI_Backend/worker
+cd CY_LLM_Backend/worker
 python -m worker.main --serve --port 50051
 ```
 
 5. 启动 Gateway：
 ```bash
-cd EW_AI_Backend/gateway
+cd CY_LLM_Backend/gateway
 ./gradlew bootRun
 ```
 
@@ -171,7 +171,7 @@ curl -X POST http://localhost:8080/api/v1/inference/stream \
 ### 2) Docker / Docker Compose（快速生产/测试）
 
 ```bash
-cd EW_AI_Backend/deploy
+cd CY_LLM_Backend/deploy
 cp .env.example .env
 # 编辑 .env 填写 API Key / Coordinator / Worker 配置
 vim .env
@@ -184,20 +184,18 @@ docker compose logs -f gateway
 ```
 
 ### 3) 使用 CLI（`./ew`）
-
+# 核心配置（使用 CY_LLM_*）
 CLI `ew` 提供多种便捷操作：
-
 ```bash
-./ew setup --engine cuda-vllm                # 一键初始化 (Conda/依赖/构建)
 ./ew start --engine cuda-vllm --model furina # 启动服务
-./ew start -d                                # 后台运行
+CY_LLM_MODEL=deepseek-v3     # 默认模型（优先）
 ./ew stop                                     # 停止所有服务
 ./ew test unit                                # 运行单元测试
 ```
 
 ### 4) 模型管理（添加 / 更新）
 
-编辑 `EW_AI_Backend/deploy/config.json`：
+编辑 `CY_LLM_Backend/deploy/config.json`：
 
 ```json
 {
@@ -233,17 +231,17 @@ curl -H "Content-Type: application/json" -X POST http://localhost:8080/api/v1/tr
 
 Python Worker 单元测试：
 ```bash
-cd EW_AI_Backend/worker
+cd CY_LLM_Backend/worker
 pytest tests/ -q
 ```
 
 Kotlin Gateway / Coordinator 测试：
 ```bash
-cd EW_AI_Backend/gateway
+cd CY_LLM_Backend/gateway
 ./gradlew test
 
-cd EW_AI_Backend/coordinator
-./gradlew test
+cd CY_LLM_Backend/coordinator
+> 说明：我们使用 `CY_LLM_*` 前缀的环境变量（例如 `CY_LLM_PORT`, `CY_LLM_INTERNAL_TOKEN` 等）。请使用 `CY_LLM_*` 变量。
 ```
 
 更多高级用法见 `TESTING.md` 或 `CONTRIBUTING.md`。
@@ -278,10 +276,6 @@ CY-LLM-Engine/
 ├── EW_AI_Backend/
 │   ├── gateway/                # Kotlin Gateway 服务
 │   │   └── src/main/kotlin/    # Spring WebFlux + gRPC
-│   ├── worker/                 # Python Worker 服务
-│   │   ├── engines/            # 推理引擎实现
-│   │   │   ├── vllm_cuda_engine.py
-│   │   │   ├── trt_engine.py
 │   │   │   ├── vllm_ascend_engine.py
 │   │   │   └── mindie_engine.py
 │   │   └── core/               # 核心组件
@@ -290,7 +284,7 @@ CY-LLM-Engine/
 │   │   ├── config.json         # 模型配置
 │   │   └── .env.example        # 环境变量模板
 │   └── proto/                  # gRPC 协议定义
-└── EW_AI_Training/             # 训练相关 (可选)
+└── CY_LLM_Training/             # 训练相关 (可选)
 ```
 
 ## ⚙️ 配置
@@ -298,35 +292,22 @@ CY-LLM-Engine/
 ### 环境变量
 
 ```bash
-# 核心配置（优先使用 CY_LLM_*，向后兼容 EW_*）
+# 核心配置（使用 CY_LLM_*）
 CY_LLM_ENGINE=cuda-vllm      # 推理引擎（优先）
-EW_ENGINE=cuda-vllm          # 向后兼容：旧变量名
 CY_LLM_PORT=8080             # Gateway 端口（优先）
-EW_PORT=8080                 # 向后兼容：旧变量名
-CY_LLM_MODEL=deepseek-v3     # 默认模型（优先）
-EW_MODEL=deepseek-v3         # 向后兼容：旧变量名
-
-# vLLM 配置
 VLLM_TP=1                    # 张量并行度
 VLLM_GPU_MEM=0.9             # GPU 显存使用率
-```
-
-完整配置参见 `EW_AI_Backend/deploy/.env.example`。
-> 向后兼容说明：我们新增了 `CY_LLM_*` 前缀的环境变量（例如 `CY_LLM_PORT`, `CY_LLM_INTERNAL_TOKEN` 等）。CLI、docker-compose 与脚本都会同时支持 `CY_LLM_*` 与旧 `EW_*`，优先读取 `CY_LLM_*`。
 
 
 ### 模型配置
 
-编辑 `EW_AI_Backend/deploy/config.json`:
+编辑 `CY_LLM_Backend/deploy/config.json`:
 
 ```json
 {
   "models": {
     "my-model": {
       "engine": "cuda-vllm",
-      "model_path": "organization/model-name",
-      "max_model_len": 8192,
-      "tensor_parallel_size": 1
     }
   }
 }
@@ -348,8 +329,8 @@ VLLM_GPU_MEM=0.9             # GPU 显存使用率
 ## 📚 文档与设计
 
 本仓库包含以下关键文档：
-- `EW_AI_Backend/ARCHITECTURE.md` - 架构说明（Gateway / Coordinator / Worker）
-- `EW_AI_Backend/DEPLOY.md` - 部署与 Docker Compose 说明
+-- `CY_LLM_Backend/ARCHITECTURE.md` - 架构说明（Gateway / Coordinator / Worker）
+-- `CY_LLM_Backend/DEPLOY.md` - 部署与 Docker Compose 说明
 - `TESTING.md` - 测试说明（本地与 CI）
 - `CONTRIBUTING.md` - 提交与版本管理规则（四段式版本号 + 后缀）
 
@@ -357,7 +338,7 @@ VLLM_GPU_MEM=0.9             # GPU 显存使用率
 
 ```bash
 # Worker 单元测试
-cd EW_AI_Backend/worker
+cd CY_LLM_Backend/worker
 pytest tests/ -q
 
 # Gateway 单元测试（Gradle）

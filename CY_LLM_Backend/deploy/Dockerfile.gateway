@@ -1,0 +1,55 @@
+# Dockerfile.gateway
+# [部署] Gateway 多阶段构建镜像
+# 用法: docker build -f deploy/Dockerfile.gateway -t cy-llm-gateway .
+
+# ========== 构建阶段 ==========
+FROM gradle:8.10-jdk21 AS builder
+
+WORKDIR /build
+
+# 复制 Gradle 配置（利用缓存层）
+COPY gateway/build.gradle.kts gateway/settings.gradle.kts* ./gateway/
+COPY gateway/gradle ./gateway/gradle
+COPY gateway/gradlew ./gateway/
+
+# 复制 Proto 文件
+COPY proto ./proto
+
+# 下载依赖（可缓存）
+WORKDIR /build/gateway
+RUN ./gradlew dependencies --no-daemon || true
+
+# 复制源码并构建
+COPY gateway/src ./src
+RUN ./gradlew bootJar --no-daemon -x test
+
+# ========== 运行阶段 ==========
+FROM eclipse-temurin:21-jre-alpine
+
+LABEL maintainer="CY-LLM Team"
+LABEL description="CY-LLM Gateway - Kotlin/Spring Boot gRPC Gateway"
+
+# 创建非 root 用户
+RUN addgroup -g 1000 ewai && adduser -u 1000 -G ewai -s /bin/sh -D ewai
+
+WORKDIR /app
+
+# 从构建阶段复制 JAR
+COPY --from=builder /build/gateway/build/libs/*.jar app.jar
+
+# 创建配置目录
+RUN mkdir -p /etc/gateway && chown -R ewai:ewai /app /etc/gateway
+
+USER ewai
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD wget -q --spider http://localhost:8080/actuator/health || exit 1
+
+# 暴露端口
+EXPOSE 8080
+
+# JVM 参数优化（容器环境）
+ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+UseG1GC"
+
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
