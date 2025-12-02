@@ -5,6 +5,10 @@
 # =============================================================================
 set -e
 
+if [[ "$(basename "$0")" == "ew" ]]; then
+    echo "⚠️  Warning: 'ew' is deprecated. Please use './cy-llm' instead." >&2
+fi
+
 # 颜色输出
 RED='\033[0;31m'
 GREEN='\033[0;32m'

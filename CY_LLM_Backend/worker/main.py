@@ -41,7 +41,7 @@ def parse_args() -> argparse.Namespace:
 
 def _parse_args() -> argparse.Namespace:
 	parser = argparse.ArgumentParser(
-		description="Element Warfare AI Worker",
+		description="CY-LLM Worker",
 		formatter_class=argparse.ArgumentDefaultsHelpFormatter,
 	)
 	parser.add_argument("--model", default="default", help="逻辑模型 ID（参考模型注册表）")

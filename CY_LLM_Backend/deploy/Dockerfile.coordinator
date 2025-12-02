@@ -48,7 +48,7 @@ RUN ./gradlew bootJar --no-daemon -Dorg.gradle.java.home=/opt/java/openjdk
 FROM eclipse-temurin:21-jre
 
 LABEL maintainer="CY-LLM Team"
-LABEL description="Element Warfare AI Coordinator Service"
+LABEL description="CY-LLM Coordinator Service"
 
 # 安装运行时依赖 (Debian-based image)
 RUN apt-get update && apt-get install -y curl ca-certificates

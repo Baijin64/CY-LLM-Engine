@@ -1,43 +1,6 @@
 {
   "models": {
     "deepseek-v3": {
-      "primary": {
-        "id": "deepseek-v3-nvidia-1",
-        "host": "worker-nvidia",
-        "port": 50051,
-        "provider": "nvidia"
-      }
-    },
-    "qwen2.5-72b": {
-      "primary": {
-        "id": "qwen2.5-72b-nvidia-1",
-        "host": "worker-nvidia",
-        "port": 50051,
-        "provider": "nvidia"
-      }
-    }
-  },
-  "backends": {
-    "nvidia": {
-      "type": "grpc",
-      "endpoint": "worker-nvidia:50051",
-      "retry_policy": { "max_attempts": 3, "backoff_ms": 100 }
-    },
-    "ascend": {
-      "type": "grpc",
-      "endpoint": "worker-ascend:50051",
-      "retry_policy": { "max_attempts": 5, "backoff_ms": 200 }
-    }
-  },
-  "defaults": {
-    "temperature": 0.7,
-    "max_tokens": 2048,
-    "top_p": 0.9
-  }
-}
-{
-  "models": {
-    "deepseek-v3": {
       "engine": "cuda-vllm",
       "model_path": "deepseek-ai/DeepSeek-V3",
       "max_model_len": 8192,
