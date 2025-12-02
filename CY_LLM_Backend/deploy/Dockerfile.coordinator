@@ -6,6 +6,10 @@ FROM eclipse-temurin:21-jdk-alpine AS builder
 
 WORKDIR /app
 
+# Ensure Gradle picks a valid Java home when building inside this container
+ENV ORG_GRADLE_JAVA_HOME=/opt/java/openjdk
+ENV JAVA_HOME=/opt/java/openjdk
+
 # 复制 Gradle Wrapper
 COPY coordinator/gradlew coordinator/gradlew
 COPY coordinator/gradle coordinator/gradle/
@@ -42,8 +46,8 @@ WORKDIR /app
 COPY --from=builder /app/coordinator/build/libs/*.jar app.jar
 
 # 创建非 root 用户
-RUN addgroup -S ew && adduser -S ew -G ew
-USER ew
+RUN addgroup -S cyllm && adduser -S cyllm -G cyllm
+USER cyllm
 
 # 环境变量
 ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
