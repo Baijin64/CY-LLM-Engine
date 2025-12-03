@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Element Warfare AI - 统一部署命令行工具
+# CY-LLM Engine - 统一部署命令行工具
 # 用法: ./ew <command> [options]
 # =============================================================================
 set -e
+
+if [[ "$(basename "$0")" == "ew" ]]; then
+    echo "⚠️  Warning: 'ew' is deprecated. Please use './cy-llm' instead." >&2
+fi
 
 # 颜色输出
 RED='\033[0;31m'
@@ -15,17 +19,18 @@ NC='\033[0m' # No Color
 
 # 项目路径
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BACKEND_DIR="$SCRIPT_DIR/EW_AI_Backend"
+BACKEND_DIR="$SCRIPT_DIR/CY_LLM_Backend"
 GATEWAY_DIR="$BACKEND_DIR/gateway"
 WORKER_DIR="$BACKEND_DIR/worker"
 DEPLOY_DIR="$BACKEND_DIR/deploy"
 
 # 默认配置
-DEFAULT_ENV_NAME="${EW_CONDA_ENV:-ew_ai_worker}"
-DEFAULT_PYTHON_VERSION="${EW_PYTHON_VERSION:-3.10}"
-DEFAULT_PORT="${EW_PORT:-8080}"
-DEFAULT_WORKER_PORT="${EW_WORKER_PORT:-50051}"
-DEFAULT_ENGINE="${EW_ENGINE:-cuda-vllm}"
+DEFAULT_ENV_NAME="${CY_LLM_CONDA_ENV:-cy_llm_worker}"
+DEFAULT_PYTHON_VERSION="${CY_LLM_PYTHON_VERSION:-3.10}"
+DEFAULT_PORT="${CY_LLM_PORT:-8080}"
+DEFAULT_WORKER_PORT="${CY_LLM_WORKER_PORT:-50051}"
+DEFAULT_ENGINE="${CY_LLM_ENGINE:-cuda-vllm}"
+
 
 # =============================================================================
 # 辅助函数
@@ -81,7 +86,7 @@ cmd_setup() {
         esac
     done
 
-    step "🚀 Element Warfare AI 环境初始化"
+    step "🚀 CY-LLM Engine 环境初始化"
     
     local conda_cmd=$(get_conda)
     info "使用包管理器: $conda_cmd"
@@ -138,8 +143,8 @@ cmd_setup() {
     echo ""
     success "✨ 环境初始化完成！"
     echo ""
-    echo -e "下一步: ${CYAN}./ew start${NC} 启动服务"
-    echo -e "        ${CYAN}./ew worker${NC} 仅启动 Worker"
+    echo -e "下一步: ${CYAN}./cy-llm start${NC} 启动服务 (兼容 ./ew)"
+    echo -e "        ${CYAN}./cy-llm worker${NC} 仅启动 Worker (兼容 ./ew)"
 }
 
 # =============================================================================
@@ -165,7 +170,7 @@ cmd_start() {
         esac
     done
 
-    step "🌟 启动 Element Warfare AI 服务"
+    step "🌟 启动 CY-LLM Engine 服务"
     
     local python_path=$(get_python_path "$env_name")
     if [[ -z "$python_path" ]]; then
@@ -184,8 +189,8 @@ cmd_start() {
     info "Worker Port: $worker_port"
     info "Python: $python_path"
     
-    export EW_ENGINE="$engine"
-    [[ -n "$model" ]] && export EW_MODEL="$model"
+    export CY_LLM_ENGINE="$engine"
+    [[ -n "$model" ]] && export CY_LLM_MODEL="$model"
     
     if [[ "$daemon" == true ]]; then
         info "后台模式启动..."
@@ -195,10 +200,10 @@ cmd_start() {
             --self-deploy.python-executable="$python_path" \
             --self-deploy.worker-dir="$WORKER_DIR" \
             --self-deploy.worker-port="$worker_port" \
-            > /tmp/ew-gateway.log 2>&1 &
-        echo $! > /tmp/ew-gateway.pid
-        success "Gateway PID: $(cat /tmp/ew-gateway.pid)"
-        success "日志: /tmp/ew-gateway.log"
+            > /tmp/cy-llm-gateway.log 2>&1 &
+        echo $! > /tmp/cy-llm-gateway.pid
+        success "Gateway PID: $(cat /tmp/cy-llm-gateway.pid)"
+        success "日志: /tmp/cy-llm-gateway.log"
     else
         java -jar "$jar_path" \
             --server.port="$port" \
@@ -234,8 +239,10 @@ cmd_worker() {
     
     local conda_cmd=$(get_conda)
     
-    export EW_ENGINE="$engine"
-    [[ -n "$model" ]] && export EW_MODEL="$model"
+    export CY_LLM_ENGINE="$engine"
+        export CY_LLM_ENGINE="$engine"
+    [[ -n "$model" ]] && export CY_LLM_MODEL="$model"
+        [[ -n "$model" ]] && export CY_LLM_MODEL="$model"
     
     info "Engine: $engine"
     info "Port: $port"
@@ -270,7 +277,8 @@ cmd_docker() {
     
     cd "$DEPLOY_DIR"
     
-    export EW_ENGINE="$engine"
+    export CY_LLM_ENGINE="$engine"
+        export CY_LLM_ENGINE="$engine"
     
     case "$action" in
         up)
@@ -312,11 +320,11 @@ cmd_docker() {
 cmd_stop() {
     step "🛑 停止服务"
     
-    if [[ -f /tmp/ew-gateway.pid ]]; then
-        local pid=$(cat /tmp/ew-gateway.pid)
+    if [[ -f /tmp/cy-llm-gateway.pid ]]; then
+        local pid=$(cat /tmp/cy-llm-gateway.pid)
         if kill -0 "$pid" 2>/dev/null; then
             kill "$pid"
-            rm /tmp/ew-gateway.pid
+            rm /tmp/cy-llm-gateway.pid
             success "Gateway (PID $pid) 已停止"
         fi
     fi
@@ -351,8 +359,8 @@ cmd_status() {
     ss -tlnp 2>/dev/null | grep -E ":8080|:50051" || echo "  无相关端口监听"
     
     echo -e "\n${CYAN}环境变量:${NC}"
-    echo "  EW_ENGINE=${EW_ENGINE:-未设置}"
-    echo "  EW_CONDA_ENV=${EW_CONDA_ENV:-$DEFAULT_ENV_NAME}"
+    echo "  CY_LLM_ENGINE=${CY_LLM_ENGINE:-未设置}"
+    echo "  CY_LLM_CONDA_ENV=${CY_LLM_CONDA_ENV:-$DEFAULT_ENV_NAME}"
 }
 
 # =============================================================================
@@ -414,7 +422,7 @@ cmd_models() {
 # =============================================================================
 cmd_help() {
     cat << 'EOF'
-Element Warfare AI - 统一部署命令行工具
+CY-LLM Engine - 统一部署命令行工具
 
 用法: ./ew <command> [options]
 
@@ -430,7 +438,7 @@ Element Warfare AI - 统一部署命令行工具
   help        显示帮助信息
 
 常用选项:
-  --env NAME        Conda 环境名称 (默认: ew_ai_worker)
+    --env NAME        Conda 环境名称 (默认: cy_llm_worker)
   --engine TYPE     推理引擎类型:
                       cuda-vllm   - NVIDIA GPU + vLLM (推荐)
                       cuda-trt    - NVIDIA GPU + TensorRT-LLM
@@ -456,12 +464,12 @@ Element Warfare AI - 统一部署命令行工具
   ./ew status
 
 环境变量:
-  EW_ENGINE         默认推理引擎
-  EW_CONDA_ENV      默认 Conda 环境名
-  EW_PORT           默认 Gateway 端口
-  EW_WORKER_PORT    默认 Worker 端口
+    CY_LLM_ENGINE          默认推理引擎
+    CY_LLM_CONDA_ENV       默认 Conda 环境名
+    CY_LLM_PORT            默认 Gateway 端口
+    CY_LLM_WORKER_PORT     默认 Worker 端口
 
-更多信息: https://github.com/your-repo/EW_AI_Deployment
+更多信息: https://github.com/your-repo/CY-LLM-Engine
 EOF
 }
 

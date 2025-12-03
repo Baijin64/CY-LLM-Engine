@@ -1,0 +1,80 @@
+# Dockerfile.worker.ascend
+# [部署] 华为 Ascend NPU Worker 镜像
+# 用法: docker build -f deploy/Dockerfile.worker.ascend -t cy-llm-worker-ascend .
+#
+# 注意：此 Dockerfile 需要在已安装 Ascend 驱动的宿主机上运行。
+# 推荐使用华为官方 CANN 镜像作为基础镜像。
+
+# 基础镜像：华为 CANN 开发镜像（需要从华为镜像仓库拉取或自行构建）
+# 如果没有官方镜像，可使用 Ubuntu 基础镜像并手动安装 CANN
+FROM ubuntu:22.04
+
+LABEL maintainer="CY-LLM Team"
+LABEL description="CY-LLM Worker - PyTorch + Ascend NPU Inference Engine"
+
+# 设置环境变量
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PIP_NO_CACHE_DIR=1
+
+# Ascend 环境变量（根据实际安装路径调整）
+ENV ASCEND_HOME=/usr/local/Ascend
+ENV LD_LIBRARY_PATH=${ASCEND_HOME}/driver/lib64:${ASCEND_HOME}/ascend-toolkit/latest/lib64:$LD_LIBRARY_PATH
+ENV PATH=${ASCEND_HOME}/ascend-toolkit/latest/bin:$PATH
+
+# 安装系统依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.10 \
+    python3.10-venv \
+    python3-pip \
+    wget \
+    curl \
+    pciutils \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3.10 /usr/bin/python3 \
+    && ln -sf /usr/bin/python3 /usr/bin/python
+
+# 创建非 root 用户
+RUN groupadd -g 1000 ewai && useradd -u 1000 -g ewai -m -s /bin/bash ewai
+
+WORKDIR /app
+
+# 复制 Ascend 专用依赖文件
+COPY worker/requirements_ascend.txt ./requirements.txt
+RUN pip3 install --no-cache-dir -r requirements.txt
+
+# 注意：torch_npu 需要单独安装，版本需与 CANN 版本匹配
+# 请根据实际 CANN 版本调整 torch_npu 版本
+# RUN pip3 install torch_npu==2.1.0
+
+# 复制 Proto 生成代码和源码
+COPY worker/ ./worker/
+COPY proto/ ./proto/
+
+# 生成 gRPC 代码
+RUN python3 -m grpc_tools.protoc \
+    -I./proto \
+    --python_out=./worker/proto_gen \
+    --pyi_out=./worker/proto_gen \
+    --grpc_python_out=./worker/proto_gen \
+    ./proto/ai_service.proto \
+    && sed -i 's/^import ai_service_pb2/from . import ai_service_pb2/' ./worker/proto_gen/ai_service_pb2_grpc.py \
+    || echo "Proto files already generated"
+
+# 创建模型和检查点目录
+RUN mkdir -p /models /checkpoints /etc/worker \
+    && chown -R ewai:ewai /app /models /checkpoints /etc/worker
+
+USER ewai
+
+# 暴露 gRPC 端口
+EXPOSE 50051
+
+# 环境变量
+ENV CY_LLM_BACKEND=ascend
+ENV CY_LLM_MODEL_REGISTRY=/etc/worker/models.json
+ENV CY_LLM_INTERNAL_TOKEN=""
+
+# 启动命令
+CMD ["python3", "-m", "worker.main", "--serve", "--port", "50051"]

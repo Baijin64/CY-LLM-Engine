@@ -1,0 +1,87 @@
+# =============================================================================
+# Prometheus 监控配置
+# 用于 prometheus.yml 的 scrape 配置
+# =============================================================================
+
+# 添加到 prometheus.yml 的 scrape_configs 部分:
+scrape_configs:
+  - job_name: 'cy-llm-gateway'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['gateway:8080']
+    # 如果启用了认证
+    # basic_auth:
+    #   username: prometheus
+    #   password: ${PROMETHEUS_PASSWORD}
+
+  - job_name: 'cy-llm-worker'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['worker:9090']
+
+# =============================================================================
+# 告警规则 (prometheus/rules/cy-llm_alerts.yml)
+# =============================================================================
+
+groups:
+  - name: cy_llm_gateway_alerts
+    rules:
+      # 高错误率告警
+      - alert: HighErrorRate
+        expr: rate(http_server_requests_seconds_count{status=~"5.."}[5m]) / rate(http_server_requests_seconds_count[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | printf \"%.2f\" }}% in the last 5 minutes"
+
+      # 高延迟告警
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(http_server_requests_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High latency detected"
+          description: "P95 latency is {{ $value | printf \"%.2f\" }}s"
+
+      # 速率限制触发过多
+      - alert: TooManyRateLimits
+        expr: rate(http_server_requests_seconds_count{status="429"}[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Too many rate limit hits"
+          description: "{{ $value }} rate limit responses per second"
+
+      # Gateway 不可用
+      - alert: GatewayDown
+        expr: up{job="cy-llm-gateway"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Gateway is down"
+          description: "CY-LLM Gateway has been down for more than 1 minute"
+
+      # Worker 不可用
+      - alert: WorkerDown
+        expr: up{job="cy-llm-worker"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Worker is down"
+          description: "CY-LLM Worker has been down for more than 1 minute"
+
+      # GPU 显存使用过高
+      - alert: HighGPUMemoryUsage
+        expr: gpu_memory_used_bytes / gpu_memory_total_bytes > 0.95
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High GPU memory usage"
+          description: "GPU memory usage is above 95%"

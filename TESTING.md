@@ -8,7 +8,7 @@
 
 ```bash
 # 进入 worker 目录
-cd EW_AI_Backend/worker
+cd CY_LLM_Backend/worker
 
 # 安装依赖（虚拟环境/conda 推荐）
 pip install -r requirements.txt
@@ -33,10 +33,10 @@ open htmlcov/index.html
 Gateway 和 Coordinator 使用 Gradle 的测试套件：
 
 ```bash
-cd EW_AI_Backend/gateway
+cd CY_LLM_Backend/gateway
 ./gradlew test
 
-cd EW_AI_Backend/coordinator
+cd CY_LLM_Backend/coordinator
 ./gradlew test
 ```
 
@@ -52,10 +52,10 @@ CI 流程（建议）:
 
 ## 运行本地端到端测试
 
-在 `EW_AI_Backend/deploy/docker-compose.yml` 或 `./ew start` 启动所有服务后，可运行 `EW_AI_Backend/tests/test_integration.py`。
+在 `CY_LLM_Backend/deploy/docker-compose.yml` 或 `./ew start` 启动所有服务后，可运行 `CY_LLM_Backend/tests/test_integration.py`。
 
 ```bash
-cd EW_AI_Backend
+cd CY_LLM_Backend
 # 启动服务
 ./ew start --engine cuda-vllm
 python -m pytest tests/test_integration.py -q

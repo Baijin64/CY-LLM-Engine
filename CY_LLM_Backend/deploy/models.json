@@ -1,0 +1,20 @@
+{
+  "default": {
+    "model_path": "deepseek-ai/deepseek-llm-7b-chat",
+    "adapter_path": "../../CY_LLM_Training/checkpoints/furina_lora_v2",
+    "engine": null,
+    "quantization": "awq"
+  },
+  "furina": {
+    "model_path": "deepseek-ai/deepseek-llm-7b-chat",
+    "adapter_path": "/checkpoints/furina_lora",
+    "engine": null,
+    "quantization": "awq"
+  },
+  "paimon": {
+    "model_path": "deepseek-ai/deepseek-llm-7b-chat",
+    "adapter_path": "/checkpoints/paimon_lora",
+    "engine": null,
+    "quantization": "awq"
+  }
+}

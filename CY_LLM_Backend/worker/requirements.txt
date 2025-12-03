@@ -1,0 +1,38 @@
+# requirements.txt
+# [依赖] 通用 Python 依赖（grpcio, torch, protobuf 等）
+# 说明：用于 Nvidia 与通用 CPU 情况下的依赖列表。
+
+# Core AI Framework
+torch>=2.1.0
+transformers>=4.36.0
+peft>=0.7.0
+bitsandbytes>=0.41.0
+accelerate>=0.25.0
+
+# Training
+trl>=0.7.0
+datasets>=2.15.0
+
+# Configuration
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+
+# gRPC
+grpcio>=1.60.0
+grpcio-tools>=1.60.0
+
+# Utilities
+scipy
+numpy
+psutil
+protobuf
+sentencepiece==0.2.1
+
+# Performance optimizations (optional)
+xxhash>=3.0.0         # 高性能哈希（缓存键）
+
+# Hot reload (optional)
+watchdog>=3.0.0       # 配置热重载
+
+# Optional: For better performance or specific models
+# flash-attn>=2.0.0; platform_system == "Linux"

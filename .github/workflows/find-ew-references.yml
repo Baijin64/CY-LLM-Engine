@@ -1,0 +1,24 @@
+name: Find Legacy EW References
+
+on:
+  push:
+    branches: [ main, refactor/rename-to-cy-llm ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  find-ew:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Run EW references check (repo & CI)
+        run: |
+          set -e
+          # 1) Root-level CI references
+          bash ./scripts/check-ci-refs.sh || true
+          # 2) Search the entire repo for remaining EW references
+          bash ./scripts/find-ew-references.sh || true
+          # 3) Coordinator specific search
+          bash CY_LLM_Backend/coordinator/scripts/find-ew-references.sh || true
+        shell: bash
