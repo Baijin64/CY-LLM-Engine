@@ -1,3 +1,38 @@
+# TESTING.md
+
+... (existing content preserved)
+# Dev environment quick setup (added by automation scripts)
+
+If Gradle builds fail with messages like "Directory does not contain a Gradle build", don't run `./gradlew` at the repository root—run the subproject wrapper.
+
+Scripts have been added to convenience your workflow:
+
+- `scripts/setup-jdk.sh`: detect and suggest the correct JDK/JAVA_HOME path. Run with:
+
+```bash
+# Print suggestions
+./scripts/setup-jdk.sh
+
+# Attempt to export JAVA_HOME for this shell session (temporary):
+./scripts/setup-jdk.sh --auto-export
+```
+
+- `scripts/gradle-build.sh`: runs gradle wrapper builds inside `CY_LLM_Backend/coordinator` and `CY_LLM_Backend/gateway` respectively. It avoids errors from running gradlew from repo root.
+
+```bash
+# Make sure JAVA_HOME is set, either manually or with script
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+# Or auto-export with the setup script
+source ./scripts/setup-jdk.sh --auto-export
+
+# Run builds (skips tests by default with -x test)
+./scripts/gradle-build.sh
+```
+
+When the script detects no `gradlew` in a subproject, it will skip it and print a warning, which helps catch incomplete worktrees.
+
+If you want to force a top-level Gradle build across multi-module project, make sure a `settings.gradle(.kts)` and top-level `gradlew` exist; otherwise prefer the `gradle-build.sh` approach.
+
 # 项目测试说明 (TESTING.md)
 
 本文件用来描述如何在本地与 CI 中运行单元测试、集成测试以及代码覆盖率工具。
