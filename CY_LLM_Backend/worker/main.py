@@ -74,13 +74,18 @@ def _format_registry(config: WorkerConfig) -> str:
 	return "\n".join(lines)
 
 
-def _build_server(args: argparse.Namespace) -> InferenceServer:
+def _build_server(args: argparse.Namespace, config: WorkerConfig) -> InferenceServer:
 	def factory(engine_type: str):
 		return create_engine(engine_type)
 
 	scheduler = TaskScheduler(max_workers=args.max_workers, queue_size=args.queue_size)
 	telemetry = Telemetry()
-	return InferenceServer(engine_factory=factory, scheduler=scheduler, telemetry=telemetry)
+	return InferenceServer(
+		engine_factory=factory,
+		scheduler=scheduler,
+		telemetry=telemetry,
+		worker_config=config,
+	)
 
 
 def _resolve_spec(config: WorkerConfig, logical_name: str) -> ModelSpec:
@@ -244,7 +249,7 @@ def main() -> None:
 		if not args.prompt and not args.preload_all and not args.serve:
 			return
 
-	inference_server = _build_server(args)
+	inference_server = _build_server(args, config)
 
 	if args.preload_all:
 		_preload_models(inference_server, config, config.model_registry.keys())

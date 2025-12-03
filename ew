@@ -363,6 +363,68 @@ cmd_status() {
     echo "  CY_LLM_CONDA_ENV=${CY_LLM_CONDA_ENV:-$DEFAULT_ENV_NAME}"
 }
 
+cmd_diagnose() {
+    local model_name="${CY_LLM_MODEL:-deepseek-v3}"
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --model)
+                model_name="$2"
+                shift 2
+                ;;
+            *)
+                model_name="$1"
+                shift
+                ;;
+        esac
+    done
+
+    step "🩺 CY-LLM 环境诊断: $model_name"
+
+    export CY_LLM_MODEL="$model_name"
+    export CY_LLM_MODEL_REGISTRY_PATH="$BACKEND_DIR/deploy/config.json"
+
+    PYTHONPATH="$BACKEND_DIR" CY_LLM_MODEL="$model_name" \
+        python - <<'PY'
+import os
+from worker.config.config_loader import load_worker_config
+from worker.utils.diagnostic import (
+    check_vram_for_model,
+    format_vram_report,
+    gather_gpu_summary,
+    check_dependencies,
+    format_dependency_summary,
+)
+
+config = load_worker_config(registry_path=os.environ.get("CY_LLM_MODEL_REGISTRY_PATH"))
+model_id = os.environ["CY_LLM_MODEL"]
+spec = config.model_registry.get(model_id)
+if spec is None:
+    raise SystemExit(f"模型 {model_id} 未在注册表中定义")
+
+gpu = gather_gpu_summary()
+print("CY-LLM 环境诊断报告")
+print("=====================")
+print("硬件信息:")
+if gpu.get("available"):
+    print(f"  GPU: {gpu.get('name')} ({gpu.get('total')} 总, {gpu.get('free')} 可用)")
+    print(f"  CUDA: {gpu.get('cuda')}")
+else:
+    print("  GPU: 未检测到可用 CUDA 设备")
+
+report = check_vram_for_model(model_id, spec)
+print("")
+print(f"模型检测: {model_id}")
+print(format_vram_report(report))
+
+print("\n依赖检查:")
+statuses = check_dependencies()
+for line in format_dependency_summary(statuses):
+    print(line)
+PY
+}
+
 # =============================================================================
 # 命令: test - 运行测试
 # =============================================================================
@@ -436,6 +498,7 @@ CY-LLM Engine - 统一部署命令行工具
   test        运行测试
   models      模型管理
   help        显示帮助信息
+    diagnose    环境与模型诊断
 
 常用选项:
     --env NAME        Conda 环境名称 (默认: cy_llm_worker)
@@ -489,6 +552,7 @@ main() {
         status)     cmd_status "$@" ;;
         test)       cmd_test "$@" ;;
         models)     cmd_models "$@" ;;
+        diagnose)   cmd_diagnose "$@" ;;
         help|--help|-h) cmd_help ;;
         *)
             error "未知命令: $command"

@@ -11,8 +11,12 @@ import threading
 import time
 from typing import Callable, Dict, Generator, List, Optional, TYPE_CHECKING
 
+import logging
+
 from ..engines.abstract_engine import BaseEngine
 from ..engines.engine_factory import create_engine
+from ..config.config_loader import ModelSpec, WorkerConfig
+from ..utils.diagnostic import check_vram_for_model, format_vram_report
 from .memory_manager import GPUMemoryManager
 from .task_scheduler import SchedulerBusy, TaskScheduler
 from .telemetry import Telemetry
@@ -31,6 +35,9 @@ def _get_prompt_cache_lazy():
     return get_prompt_cache()
 
 
+LOGGER = logging.getLogger("cy_llm.worker.server")
+
+
 class InferenceServer:
 
 	# 说明：该类作为推理服务的协调层，负责：
@@ -46,6 +53,7 @@ class InferenceServer:
 		telemetry: Optional[Telemetry] = None,
 		prompt_cache: Optional["PromptCache"] = None,
 		enable_cache: bool = False,  # 兼容旧测试
+		worker_config: Optional[WorkerConfig] = None,
 	) -> None:
 		self._engine_factory = engine_factory or self._default_engine_factory
 		self._scheduler = scheduler or TaskScheduler()
@@ -57,6 +65,7 @@ class InferenceServer:
 		self._enable_cache = enable_cache
 		# 已加载模型记录
 		self._loaded_models: Dict[str, dict] = {}
+		self._worker_config = worker_config
 
 	def _default_engine_factory(self, engine_type: str) -> BaseEngine:
 		return create_engine(engine_type)
@@ -83,12 +92,23 @@ class InferenceServer:
 			if engine is not None:
 				return engine
 
+			model_spec = self._resolve_model_spec(model_id)
+			if model_spec is not None:
+				report = check_vram_for_model(model_id, model_spec)
+				if not report.success:
+					LOGGER.error(format_vram_report(report))
+					raise RuntimeError("显存不足，无法加载模型: %s" % model_id)
+
 			# 通过工厂创建引擎并加载模型，然后交由内存管理器注册
 			engine = self._engine_factory(engine_type)
 			engine.load_model(model_path, adapter_path=adapter_path, **(engine_kwargs or {}))
 			self._memory.register_model(model_id, engine)
 			return engine
 
+	def _resolve_model_spec(self, model_id: str) -> Optional[ModelSpec]:
+		if not self._worker_config:
+			return None
+		return self._worker_config.model_registry.get(model_id)
 	def stream_predict(
 		self,
 		*,

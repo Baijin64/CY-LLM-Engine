@@ -234,11 +234,15 @@ def _parse_registry_json(payload: str) -> Dict[str, ModelSpec]:
     """解析 JSON 格式的模型注册表"""
     data = json.loads(payload)
     registry: Dict[str, ModelSpec] = {}
-    
-    for logical_name, spec in data.items():
+
+    # 如果 JSON 有 "models" 键，则提取它（部署配置格式）
+    # 否则假设顶层就是模型注册表（简单格式）
+    models_data = data.get("models", data)
+
+    for logical_name, spec in models_data.items():
         if not isinstance(spec, dict) or "model_path" not in spec:
             raise ValueError(f"Invalid registry item: {logical_name}")
-            
+
         registry[logical_name] = ModelSpec(
             model_path=spec["model_path"],
             adapter_path=spec.get("adapter_path"),
@@ -254,7 +258,7 @@ def _parse_registry_json(payload: str) -> Dict[str, ModelSpec]:
             enable_prompt_cache=spec.get("enable_prompt_cache"),
             prompt_cache_ttl=spec.get("prompt_cache_ttl"),
         )
-        
+
     return registry
 
 
