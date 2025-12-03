@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+#curl -X POST http://localhost:8080/api/v1/inference/stream -H "Content-Type: application/json" -H "X-API-Key: 111" -d "{\"modelId\": \"default\", \"prompt\": \"你好\"}"
+#export GATEWAY_SECURITY_API_KEY="111"
+#export HF_ENDPOINT="https://hf-mirror.com"
 # =============================================================================
 # Element Warfare AI - 统一部署命令行工具
 # 用法: ./ew <command> [options]
@@ -21,7 +24,7 @@ WORKER_DIR="$BACKEND_DIR/worker"
 DEPLOY_DIR="$BACKEND_DIR/deploy"
 
 # 默认配置
-DEFAULT_ENV_NAME="${EW_CONDA_ENV:-ew_ai_worker}"
+DEFAULT_ENV_NAME="${EW_CONDA_ENV:-ew-ai-worker}"
 DEFAULT_PYTHON_VERSION="${EW_PYTHON_VERSION:-3.10}"
 DEFAULT_PORT="${EW_PORT:-8080}"
 DEFAULT_WORKER_PORT="${EW_WORKER_PORT:-50051}"
@@ -183,7 +186,14 @@ cmd_start() {
     info "Gateway Port: $port"
     info "Worker Port: $worker_port"
     info "Python: $python_path"
-    
+
+    # Ensure VLLM GPU memory env vars are set for local starts (default to 0.8)
+    export VLLM_GPU_MEM=${VLLM_GPU_MEM:-0.8}
+    export VLLM_GPU_MEMORY_UTILIZATION=${VLLM_GPU_MEMORY_UTILIZATION:-$VLLM_GPU_MEM}
+
+    # Ensure Worker reads the local model registry (so gpu_memory_utilization is applied)
+    export EW_MODEL_REGISTRY_PATH=${EW_MODEL_REGISTRY_PATH:-"$SCRIPT_DIR/EW_AI_Backend/deploy/models.json"}
+
     export EW_ENGINE="$engine"
     [[ -n "$model" ]] && export EW_MODEL="$model"
     
