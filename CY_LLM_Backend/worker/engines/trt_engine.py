@@ -152,7 +152,7 @@ class TensorRTEngine(BaseEngine):
         **kwargs
     ) -> Generator[str, None, None]:
         """
-        流式推理。
+        流式推理（改进版）。
         
         Args:
             prompt: 输入提示
@@ -173,27 +173,46 @@ class TensorRTEngine(BaseEngine):
         top_p = kwargs.get("top_p", 0.9)
         
         try:
-            # TensorRT-LLM 生成
-            outputs = self._runner.generate(
-                batch_input_ids=[input_ids.squeeze().tolist()],
-                max_new_tokens=max_new_tokens,
-                end_id=self._tokenizer.eos_token_id,
-                pad_id=self._tokenizer.pad_token_id,
-                temperature=temperature,
-                top_p=top_p,
-                streaming=False,  # TRT-LLM 的流式需要特殊处理
-            )
-            
-            # 解码输出
-            if outputs is not None and len(outputs) > 0:
-                output_ids = outputs[0]
-                # 移除输入部分
-                new_tokens = output_ids[len(input_ids.squeeze()):]
-                generated_text = self._tokenizer.decode(new_tokens, skip_special_tokens=True)
+            # 尝试使用 TensorRT-LLM 的真流式 API
+            try:
+                # 检查是否支持流式输出
+                for output in self._runner.generate(
+                    input_ids=input_ids,
+                    max_new_tokens=max_new_tokens,
+                    streaming=True,  # 启用真流式
+                    temperature=temperature,
+                    top_p=top_p,
+                    end_id=self._tokenizer.eos_token_id,
+                    pad_id=self._tokenizer.pad_token_id,
+                ):
+                    # 解码最新 token
+                    token_id = output.token_ids[-1]
+                    token_text = self._tokenizer.decode([token_id], skip_special_tokens=True)
+                    yield token_text
+                    
+            except (TypeError, AttributeError):
+                # 回退到伪流式（兼容旧版本 TRT）
+                LOGGER.warning("TRT 版本不支持真流式，使用伪流式")
+
+                # 完整生成后逐字符返回
+                outputs = self._runner.generate(
+                    batch_input_ids=[input_ids.squeeze().tolist()],
+                    max_new_tokens=max_new_tokens,
+                    end_id=self._tokenizer.eos_token_id,
+                    pad_id=self._tokenizer.pad_token_id,
+                    temperature=temperature,
+                    top_p=top_p,
+                    streaming=False,
+                )
                 
-                # 模拟流式输出
-                for char in generated_text:
-                    yield char
+                if outputs is not None and len(outputs) > 0:
+                    output_ids = outputs[0]
+                    # 移除输入部分
+                    new_tokens = output_ids[len(input_ids.squeeze()):]
+                    generated_text = self._tokenizer.decode(new_tokens, skip_special_tokens=True)
+
+                    for char in generated_text:
+                        yield char
                     
         except Exception as e:
             LOGGER.error("TensorRT 推理失败: %s", e)

@@ -1,0 +1,14 @@
+# NVIDIA Legacy Engine (Transformers + bitsandbytes)
+# 适用于: nvidia, cuda
+
+-r requirements-base.txt
+
+# PyTorch
+--extra-index-url https://download.pytorch.org/whl/cu118
+torch>=2.1.0,<2.5.0
+torchvision>=0.16.0
+torchaudio>=2.1.0
+
+# Quantization
+bitsandbytes>=0.41.0
+accelerate>=0.25.0

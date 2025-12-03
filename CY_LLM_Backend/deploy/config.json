@@ -15,7 +15,7 @@
       "engine": "cuda-vllm-async",
       "model_path": "deepseek-ai/DeepSeek-V3",
       "max_model_len": 8192,
-      "gpu_memory_utilization": 0.9,
+      "gpu_memory_utilization": 0.8,
       "tensor_parallel_size": 1,
       "enable_prefix_caching": true,
       "kv_cache_dtype": "auto",

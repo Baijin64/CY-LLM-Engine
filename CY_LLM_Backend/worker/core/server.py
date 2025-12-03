@@ -70,6 +70,56 @@ class InferenceServer:
 	def _default_engine_factory(self, engine_type: str) -> BaseEngine:
 		return create_engine(engine_type)
 
+	def _load_model_with_retry(
+		self,
+		engine: BaseEngine,
+		model_path: str,
+		adapter_path: Optional[str],
+		base_kwargs: dict,
+		max_retries: int = 3
+	) -> None:
+		"""带自动重试的模型加载"""
+		import gc
+		import torch
+		
+		from ..utils.vram_optimizer import estimate_vram_requirements
+		
+		# 渐进式降级配置
+		retry_configs = [
+			base_kwargs,  # 尝试 1: 用户配置
+			{**base_kwargs, "gpu_memory_utilization": 0.70},  # 尝试 2: 降低显存
+			{**base_kwargs, "gpu_memory_utilization": 0.60, "max_model_len": 4096},  # 尝试 3
+			{**base_kwargs, "gpu_memory_utilization": 0.50, "max_model_len": 2048},  # 尝试 4
+		]
+
+		for attempt, config in enumerate(retry_configs[:max_retries], 1):
+			try:
+				# 更新引擎配置
+				for key, value in config.items():
+					if hasattr(engine, key):
+						setattr(engine, key, value)
+
+				engine.load_model(model_path, adapter_path)
+
+				if attempt > 1:
+					LOGGER.warning("模型加载成功（尝试 %d/%d）", attempt, max_retries)
+				return
+
+			except RuntimeError as e:
+				if "out of memory" in str(e).lower():
+					LOGGER.warning("OOM (尝试 %d/%d): %s", attempt, max_retries, config)
+					# 清理显存
+					gc.collect()
+					if torch.cuda.is_available():
+						torch.cuda.empty_cache()
+
+					if attempt < max_retries:
+						continue
+					else:
+						raise RuntimeError(f"OOM，已重试 {max_retries} 次") from e
+				else:
+					raise
+
 	def ensure_model(
 		self,
 		model_id: str,
@@ -101,7 +151,16 @@ class InferenceServer:
 
 			# 通过工厂创建引擎并加载模型，然后交由内存管理器注册
 			engine = self._engine_factory(engine_type)
-			engine.load_model(model_path, adapter_path=adapter_path, **(engine_kwargs or {}))
+			
+			# 使用带重试的模型加载
+			self._load_model_with_retry(
+				engine,
+				model_path,
+				adapter_path,
+				engine_kwargs or {},
+				max_retries=3
+			)
+			
 			self._memory.register_model(model_id, engine)
 			return engine
 

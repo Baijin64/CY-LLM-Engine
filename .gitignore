@@ -125,6 +125,9 @@ kaptKotlin/
 # Gradle wrapper generated files
 /.gradle
 
+# Allow gradle wrapper jars to be committed for consistent builds
+!**/gradle/wrapper/gradle-wrapper.jar
+
 # Prevent accidentally committing local JetBrains config for Kotlin multi-platform
 *.kts.cache
 *.bak

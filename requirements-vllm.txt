@@ -1,0 +1,19 @@
+# vLLM Engine Dependencies
+# 适用于: cuda-vllm, cuda-vllm-async
+
+-r requirements-base.txt
+
+# PyTorch (vLLM 需要 torch>=2.4.0, CUDA 12.1+)
+--extra-index-url https://download.pytorch.org/whl/cu121
+torch>=2.4.0,<2.6.0
+torchvision>=0.19.0,<0.21.0
+torchaudio>=2.4.0,<2.6.0
+
+# vLLM
+vllm>=0.6.0,<0.7.0
+
+# Optional: Flash Attention (Linux only)
+flash-attn>=2.5.0; platform_system == "Linux"
+
+# Performance
+triton>=2.3.0

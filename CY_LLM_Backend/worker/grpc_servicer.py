@@ -132,13 +132,60 @@ class AiInferenceServicerImpl(AiInferenceServicer):
         adapter_path = adapter or spec.adapter_path
         engine_type = spec.engine or self._config.preferred_backend
         engine_kwargs = {}
-        if spec.use_4bit is not None:
-            # 兼容旧的 use_4bit 字段：不要直接将其传入引擎构造函数
-            # 将布尔值映射为 quantization 参数（若为 True 则使用 AWQ），
-            # 否则不设置量化，让引擎使用默认设置。
-            use_4bit_val = spec.use_4bit
-            if use_4bit_val:
-                engine_kwargs["quantization"] = "awq"
+
+        # === 量化配置（引擎适配） ===
+        quantization = spec.quantization
+        if quantization is None and spec.use_4bit:
+            # 旧字段兼容
+            quantization = "bitsandbytes"
+            LOGGER.warning(
+                "[%s] 模型 '%s' 使用已废弃的 use_4bit 字段",
+                trace_id, model_id
+            )
+
+        if quantization:
+            # 根据引擎类型映射量化方法
+            engine_type_str = str(engine_type).lower()
+
+            if "vllm" in engine_type_str:
+                # vLLM 只支持 AWQ/GPTQ/FP8 预量化模型
+                if quantization == "bitsandbytes":
+                    LOGGER.error(
+                        "[%s] vLLM 不支持 bitsandbytes 量化。"
+                        "请使用 AWQ/GPTQ 预量化模型，或切换到 nvidia 引擎",
+                        trace_id
+                    )
+                    context.abort(
+                        grpc.StatusCode.INVALID_ARGUMENT,
+                        "vLLM engine does not support bitsandbytes. Use AWQ/GPTQ models or switch to nvidia engine."
+                    )
+                    return
+                elif quantization in ["awq", "gptq", "fp8", "fp8_e5m2"]:
+                    engine_kwargs["quantization"] = quantization
+                    LOGGER.info("[%s] 使用 vLLM 量化: %s", trace_id, quantization)
+                else:
+                    LOGGER.warning(
+                        "[%s] vLLM 不支持量化方法 '%s'，已忽略",
+                        trace_id, quantization
+                    )
+
+            elif engine_type_str in ["nvidia", "cuda"]:
+                # NvidiaEngine 使用 transformers + bitsandbytes
+                if quantization == "bitsandbytes":
+                    engine_kwargs["load_in_4bit"] = True
+                    engine_kwargs["bnb_4bit_compute_dtype"] = "bfloat16"
+                    engine_kwargs["bnb_4bit_quant_type"] = "nf4"
+                    engine_kwargs["bnb_4bit_use_double_quant"] = True
+                    LOGGER.info("[%s] 使用 bitsandbytes 量化", trace_id)
+                elif quantization in ["awq", "gptq"]:
+                    engine_kwargs["quantization_config"] = {"method": quantization}
+                    LOGGER.info("[%s] 使用 %s 量化", trace_id, quantization)
+                else:
+                    LOGGER.warning(
+                        "[%s] NvidiaEngine 不支持量化方法 '%s'",
+                        trace_id, quantization
+                    )
+
         # KV Cache 配置
         if spec.max_model_len is not None:
             engine_kwargs["max_model_len"] = spec.max_model_len

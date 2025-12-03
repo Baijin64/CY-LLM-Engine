@@ -65,7 +65,7 @@ class VllmCudaEngine(BaseEngine):
     def __init__(
         self,
         tensor_parallel_size: int = 1,
-        gpu_memory_utilization: float = 0.90,
+        gpu_memory_utilization: float = 0.75,  # 修改: 0.90 -> 0.75
         max_model_len: Optional[int] = None,
         quantization: Optional[str] = None,
         enable_lora: bool = True,
@@ -76,19 +76,27 @@ class VllmCudaEngine(BaseEngine):
     ) -> None:
         """
         初始化 vLLM CUDA 引擎。
-        
+
         Args:
             tensor_parallel_size: 张量并行数（多卡时使用）
-            gpu_memory_utilization: GPU 显存使用率上限
+            gpu_memory_utilization: GPU 显存使用率上限（默认 0.75，推荐 0.70-0.85）
             max_model_len: 最大序列长度，None 则自动检测
-            quantization: 量化方法，如 "awq", "gptq", None 表示不量化
+            quantization: 量化方法，如 "awq", "gptq", "fp8"（vLLM 不支持 bitsandbytes）
             enable_lora: 是否启用 LoRA 支持
             max_loras: 最大同时加载的 LoRA 数量
             enable_prefix_caching: 启用前缀缓存（Automatic Prefix Caching）
             kv_cache_dtype: KV Cache 数据类型，"auto" 或 "fp8"
         """
         _ensure_vllm_imported()
-        
+
+        # 验证 gpu_memory_utilization 安全性
+        if gpu_memory_utilization > 0.90:
+            LOGGER.warning(
+                "gpu_memory_utilization=%.2f 过高，可能导致 OOM。自动调整为 0.85",
+                gpu_memory_utilization
+            )
+            gpu_memory_utilization = 0.85
+
         self.tensor_parallel_size = tensor_parallel_size
         self.gpu_memory_utilization = gpu_memory_utilization
         self.max_model_len = max_model_len
@@ -98,11 +106,11 @@ class VllmCudaEngine(BaseEngine):
         self.enable_prefix_caching = enable_prefix_caching
         self.kv_cache_dtype = kv_cache_dtype
         self.extra_kwargs = kwargs
-        
+
         self._llm: Optional[Any] = None  # vLLM LLM 实例
         self._model_path: Optional[str] = None
         self._loaded_loras: Dict[str, str] = {}  # lora_name -> lora_path
-        
+
         LOGGER.info(
             "VllmCudaEngine 初始化: tp=%d, mem=%.2f, quant=%s, lora=%s, prefix_cache=%s, kv_dtype=%s",
             tensor_parallel_size, gpu_memory_utilization, quantization, enable_lora,
@@ -113,6 +121,7 @@ class VllmCudaEngine(BaseEngine):
         self,
         model_path: str,
         adapter_path: Optional[str] = None,
+        skip_vram_check: bool = False,
         **kwargs
     ) -> None:
         """
@@ -121,6 +130,7 @@ class VllmCudaEngine(BaseEngine):
         Args:
             model_path: HuggingFace 模型 ID 或本地路径
             adapter_path: LoRA 适配器路径（可选）
+            skip_vram_check: 跳过 VRAM 预检查（默认 False）
             **kwargs: 额外参数传递给 vLLM
                 - max_model_len: 覆盖实例配置的最大序列长度
                 - tensor_parallel_size: 覆盖实例配置的张量并行数
@@ -129,6 +139,38 @@ class VllmCudaEngine(BaseEngine):
                 - gpu_memory_utilization: 覆盖实例配置的显存利用率
         """
         LOGGER.info("正在加载模型: %s", model_path)
+        
+        # === VRAM 预检查 ===
+        if not skip_vram_check:
+            try:
+                from worker.utils.vram_optimizer import (
+                    estimate_vram_requirements,
+                    optimize_vram_config,
+                )
+
+                estimate = estimate_vram_requirements(
+                    model_name_or_params=model_path,
+                    max_model_len=self.max_model_len or 2048,
+                    dtype="fp16",
+                    quantization=self.quantization,
+                    engine_type="vllm",
+                    tensor_parallel_size=self.tensor_parallel_size,
+                )
+
+                LOGGER.info("VRAM 估算: %s", estimate.recommendation)
+
+                if not estimate.is_safe:
+                    # 尝试优化配置
+                    optimized = optimize_vram_config(estimate)
+                    if "gpu_memory_utilization" in optimized:
+                        old_util = self.gpu_memory_utilization
+                        self.gpu_memory_utilization = optimized["gpu_memory_utilization"]
+                        LOGGER.warning(
+                            "自动调整 gpu_memory_utilization: %.2f -> %.2f",
+                            old_util, self.gpu_memory_utilization
+                        )
+            except ImportError:
+                LOGGER.warning("vram_optimizer 未找到，跳过 VRAM 检查")
         
         # 从 kwargs 提取可覆盖的配置
         max_model_len = kwargs.pop("max_model_len", None) or self.max_model_len
@@ -153,6 +195,9 @@ class VllmCudaEngine(BaseEngine):
             
         if self.quantization:
             llm_kwargs["quantization"] = self.quantization
+            # 如果使用 bitsandbytes，告诉 vLLM 使用 bitsandbytes 加载格式
+            if str(self.quantization).lower() == 'bitsandbytes':
+                llm_kwargs["load_format"] = "bitsandbytes"
             
         if self.enable_lora:
             llm_kwargs["enable_lora"] = True
@@ -171,7 +216,20 @@ class VllmCudaEngine(BaseEngine):
         # 合并额外参数
         llm_kwargs.update(self.extra_kwargs)
         llm_kwargs.update(kwargs)
-        
+
+        # 量化验证：vLLM 只支持 AWQ/GPTQ/FP8
+        if self.quantization:
+            valid_vllm_quant = ["awq", "gptq", "fp8", "fp8_e5m2"]
+            if self.quantization in valid_vllm_quant:
+                llm_kwargs["quantization"] = self.quantization
+                LOGGER.info("使用量化方法: %s", self.quantization)
+            else:
+                raise ValueError(
+                    f"vLLM 不支持量化方法 '{self.quantization}'。"
+                    f"支持的方法: {', '.join(valid_vllm_quant)}。"
+                    f"如需使用 bitsandbytes，请切换到 nvidia 引擎。"
+                )
+
         try:
             self._llm = _LLM(**llm_kwargs)
             self._model_path = model_path

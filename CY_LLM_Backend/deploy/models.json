@@ -3,18 +3,20 @@
     "model_path": "deepseek-ai/deepseek-llm-7b-chat",
     "adapter_path": "../../CY_LLM_Training/checkpoints/furina_lora_v2",
     "engine": null,
-    "quantization": "awq"
+    "gpu_memory_utilization": 0.85,
+    "max_model_len": 2048,
+    "quantization": "bitsandbytes"
   },
   "furina": {
     "model_path": "deepseek-ai/deepseek-llm-7b-chat",
     "adapter_path": "/checkpoints/furina_lora",
     "engine": null,
-    "quantization": "awq"
+    "use_4bit": true
   },
   "paimon": {
     "model_path": "deepseek-ai/deepseek-llm-7b-chat",
     "adapter_path": "/checkpoints/paimon_lora",
     "engine": null,
-    "quantization": "awq"
+    "use_4bit": true
   }
 }

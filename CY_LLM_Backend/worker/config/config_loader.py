@@ -243,11 +243,20 @@ def _parse_registry_json(payload: str) -> Dict[str, ModelSpec]:
         if not isinstance(spec, dict) or "model_path" not in spec:
             raise ValueError(f"Invalid registry item: {logical_name}")
 
+        # 兼容旧配置：use_4bit -> quantization
+        quantization = spec.get("quantization")
+        if quantization is None and spec.get("use_4bit"):
+            quantization = "bitsandbytes"
+            LOGGER.warning(
+                "模型 '%s' 使用已废弃的 use_4bit，已转换为 quantization='bitsandbytes'",
+                logical_name
+            )
         registry[logical_name] = ModelSpec(
             model_path=spec["model_path"],
             adapter_path=spec.get("adapter_path"),
             engine=spec.get("engine"),
-            use_4bit=spec.get("use_4bit"),
+            quantization=quantization,  # 添加量化字段
+            use_4bit=spec.get("use_4bit"),  # 保留旧字段以向后兼容
             max_model_len=spec.get("max_model_len"),
             tensor_parallel_size=spec.get("tensor_parallel_size"),
             # KV Cache 配置

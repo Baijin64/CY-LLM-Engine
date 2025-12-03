@@ -117,22 +117,54 @@ class ModelSpec(BaseModel):
     model_path: str = Field(..., description="模型路径或 HuggingFace ID")
     adapter_path: Optional[str] = Field(None, description="LoRA 适配器路径")
     engine: Optional[EngineType] = Field(None, description="指定引擎类型")
-    
-    # 量化
-    use_4bit: Optional[bool] = Field(None, description="是否使用 4bit 量化")
-    
+
+    # 量化配置（新增标准字段）
+    quantization: Optional[str] = Field(
+        None,
+        description="量化方法: awq, gptq, bitsandbytes, fp8"
+    )
+    use_4bit: Optional[bool] = Field(
+        None,
+        description="[已废弃] 使用 quantization='bitsandbytes' 替代"
+    )
+
     # vLLM 配置
     max_model_len: Optional[int] = Field(None, description="最大模型长度")
     tensor_parallel_size: Optional[int] = Field(None, ge=1, description="张量并行度")
     gpu_memory_utilization: Optional[float] = Field(None, ge=0.0, le=1.0, description="GPU 显存利用率")
-    
+
     # KV Cache 配置
     enable_prefix_caching: Optional[bool] = Field(None, description="启用前缀缓存")
     kv_cache_dtype: Optional[str] = Field(None, description="KV Cache 数据类型")
-    
+
     # Prompt 缓存
     enable_prompt_cache: Optional[bool] = Field(None, description="启用 Prompt 缓存")
     prompt_cache_ttl: Optional[int] = Field(None, ge=0, description="Prompt 缓存 TTL (秒)")
+
+    @field_validator("quantization", mode="before")
+    @classmethod
+    def validate_quantization(cls, v):
+        """验证量化方法"""
+        if v is None:
+            return None
+        v_lower = str(v).lower().strip()
+        valid_methods = ["awq", "gptq", "bitsandbytes", "fp8", "fp8_e5m2", "none"]
+        if v_lower not in valid_methods:
+            raise ValueError(
+                f"不支持的量化方法: {v}. 支持: {', '.join(valid_methods)}"
+            )
+        return None if v_lower == "none" else v_lower
+
+    @field_validator("gpu_memory_utilization", mode="before")
+    @classmethod
+    def validate_gpu_memory(cls, v):
+        """验证并警告不安全的显存配置"""
+        if v is not None and v > 0.90:
+            LOGGER.warning(
+                "gpu_memory_utilization=%.2f 过高，可能导致 OOM。推荐值: 0.70-0.85",
+                v
+            )
+        return v
 
     # Use Pydantic v2 style 'model_config' to avoid deprecation warnings
     model_config = ConfigDict(frozen=True, use_enum_values=True)
