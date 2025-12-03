@@ -30,6 +30,17 @@ DEFAULT_PORT="${EW_PORT:-8080}"
 DEFAULT_WORKER_PORT="${EW_WORKER_PORT:-50051}"
 DEFAULT_ENGINE="${EW_ENGINE:-cuda-vllm}"
 
+# 引擎到依赖文件的映射
+declare -A ENGINE_REQUIREMENTS=(
+    ["cuda-vllm"]="requirements-vllm.txt"
+    ["cuda-vllm-async"]="requirements-vllm.txt"
+    ["cuda-trt"]="requirements-trt.txt"
+    ["nvidia"]="requirements-nvidia.txt"
+    ["cuda"]="requirements-nvidia.txt"
+    ["ascend-vllm"]="requirements_ascend.txt"
+    ["ascend-mindie"]="requirements_ascend.txt"
+)
+
 # =============================================================================
 # 辅助函数
 # =============================================================================
@@ -73,22 +84,36 @@ cmd_setup() {
     local python_version="$DEFAULT_PYTHON_VERSION"
     local engine="$DEFAULT_ENGINE"
     local skip_gradle=false
-    
+    local skip_deps=false
+
     while [[ $# -gt 0 ]]; do
         case $1 in
             --env)      env_name="$2"; shift 2 ;;
             --python)   python_version="$2"; shift 2 ;;
             --engine)   engine="$2"; shift 2 ;;
             --skip-gradle) skip_gradle=true; shift ;;
+            --skip-deps)   skip_deps=true; shift ;;
             *) shift ;;
         esac
     done
 
-    step "🚀 Element Warfare AI 环境初始化"
-    
+    # 验证引擎类型
+    if [[ ! -v ENGINE_REQUIREMENTS["$engine"] ]]; then
+        error "不支持的引擎类型: $engine"
+        echo "支持的引擎: ${!ENGINE_REQUIREMENTS[@]}"
+        exit 1
+    fi
+
+    local req_file="${ENGINE_REQUIREMENTS[$engine]}"
+
+    step "🚀 CY-LLM Engine 环境初始化"
+    info "引擎: $engine"
+    info "环境名称: $env_name"
+    info "依赖文件: $req_file"
+
     local conda_cmd=$(get_conda)
     info "使用包管理器: $conda_cmd"
-    
+
     # 1. 创建/检查 Conda 环境
     step "1/3 Python 环境"
     if $conda_cmd env list | grep -q "^$env_name "; then
@@ -98,25 +123,30 @@ cmd_setup() {
         $conda_cmd create -n "$env_name" python="$python_version" -y
         success "环境创建完成"
     fi
-    
+
     # 2. 安装 Python 依赖
-    info "安装 Python 依赖..."
-    case "$engine" in
-        cuda-vllm|nvidia)
-            $conda_cmd run -n "$env_name" pip install -r "$WORKER_DIR/requirements.txt" -q
-            ;;
-        cuda-trt)
-            $conda_cmd run -n "$env_name" pip install -r "$WORKER_DIR/requirements.txt" -q
-            # TensorRT-LLM 需要特殊安装
-            warn "TensorRT-LLM 需要从 NVIDIA 官方获取，请参考文档安装"
-            ;;
-        ascend-*)
-            $conda_cmd run -n "$env_name" pip install -r "$WORKER_DIR/requirements_ascend.txt" -q
-            ;;
-        *)
-            $conda_cmd run -n "$env_name" pip install -r "$WORKER_DIR/requirements.txt" -q
-            ;;
-    esac
+    if [[ "$skip_deps" != true ]]; then
+        step "2/3 安装依赖: $req_file"
+        if [[ -f "$SCRIPT_DIR/$req_file" ]]; then
+            info "安装 Python 依赖..."
+            $conda_cmd run -n "$env_name" pip install -r "$SCRIPT_DIR/$req_file" -q
+            success "依赖安装完成"
+        else
+            warn "依赖文件不存在: $req_file"
+        fi
+
+        # 为 TRT 添加特殊提示
+        if [[ "$engine" == "cuda-trt" ]]; then
+            echo ""
+            echo "${YELLOW}⚠️  TensorRT-LLM 需要手动安装${NC}"
+            echo "  方法 1: pip install tensorrt_llm -U --pre --extra-index-url https://pypi.nvidia.com"
+            echo "  方法 2: 使用 NGC 容器 nvcr.io/nvidia/tensorrt-llm:latest"
+            echo "  文档: https://github.com/NVIDIA/TensorRT-LLM"
+            echo ""
+        fi
+    else
+        info "跳过依赖安装"
+    fi
     success "依赖安装完成"
     
     # 3. 构建 Gateway (可选)
@@ -420,13 +450,101 @@ cmd_models() {
 }
 
 # =============================================================================
+# 命令: doctor - 环境诊断
+# =============================================================================
+cmd_doctor() {
+    local env_name="${CY_LLM_CONDA_ENV:-${EW_CONDA_ENV:-$DEFAULT_ENV_NAME}}"
+
+    step "🔍 环境诊断"
+
+    # 检查 Conda 环境
+    echo -e "\n${CYAN}Conda 环境:${NC}"
+    local conda_cmd=$(get_conda)
+    if $conda_cmd env list | grep -q "^$env_name "; then
+        echo "  ✅ 环境存在: $env_name"
+    else
+        echo "  ❌ 环境不存在: $env_name"
+        echo "  运行: ./cy-llm setup --engine <engine_type>"
+        return 1
+    fi
+
+    # 检查关键依赖
+    echo -e "\n${CYAN}依赖检查:${NC}"
+    $conda_cmd run -n "$env_name" python - <<'PY'
+import sys
+def check_import(module, name=None):
+    try:
+        mod = __import__(module)
+        version = getattr(mod, "__version__", "未知")
+        print(f"  ✅ {name or module}: {version}")
+        return True
+    except ImportError:
+        print(f"  ❌ {name or module}: 未安装")
+        return False
+
+check_import("torch", "PyTorch")
+check_import("transformers")
+check_import("vllm", "vLLM")
+try:
+    __import__("tensorrt_llm")
+    print("  ✅ TensorRT-LLM: 已安装")
+except ImportError:
+    print("  ❌ TensorRT-LLM: 未安装")
+PY
+
+    # 检查 GPU
+    echo -e "\n${CYAN}GPU 状态:${NC}"
+    if command -v nvidia-smi &> /dev/null; then
+        nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv,noheader 2>/dev/null | \
+            awk -F', ' '{printf "  GPU: %s (%s 总, %s 可用)\n", $1, $2, $3}' || \
+            echo "  ⚠️  无法获取 GPU 信息"
+    else
+        echo "  ❌ nvidia-smi 不可用"
+    fi
+
+    echo ""
+    success "诊断完成"
+}
+
+# =============================================================================
+# 命令: convert-trt - 模型转换为 TensorRT 引擎
+# =============================================================================
+cmd_convert_trt() {
+    local model=""
+    local output=""
+    local env_name="${CY_LLM_CONDA_ENV:-${EW_CONDA_ENV:-$DEFAULT_ENV_NAME}}"
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --model) model="$2"; shift 2 ;;
+            --output) output="$2"; shift 2 ;;
+            --env) env_name="$2"; shift 2 ;;
+            *) shift ;;
+        esac
+    done
+
+    if [[ -z "$model" || -z "$output" ]]; then
+        error "用法: ./ew convert-trt --model <model> --output <output>"
+        error "示例: ./ew convert-trt --model Qwen/Qwen2.5-7B-Instruct --output /models/qwen2.5-7b-trt"
+        exit 1
+    fi
+
+    step "🔧 转换模型为 TensorRT-LLM 引擎"
+
+    conda run -n "$env_name" python "$SCRIPT_DIR/scripts/convert_trt.py" \
+        --model "$model" \
+        --output "$output" \
+        "$@"
+}
+
+# =============================================================================
 # 命令: help - 帮助信息
 # =============================================================================
 cmd_help() {
     cat << 'EOF'
-Element Warfare AI - 统一部署命令行工具
+CY-LLM Engine - 统一部署命令行工具
 
-用法: ./ew <command> [options]
+用法: ./cy-llm <command> [options]
 
 命令:
   setup       初始化环境 (Conda + 依赖 + Gateway 构建)
@@ -434,36 +552,50 @@ Element Warfare AI - 统一部署命令行工具
   worker      仅启动 Worker
   stop        停止所有服务
   status      查看服务状态
+  doctor      环境诊断 (检查依赖、GPU、配置)
+  convert-trt 转换模型为 TensorRT-LLM 引擎
   docker      Docker Compose 部署
   test        运行测试
   models      模型管理
   help        显示帮助信息
 
 常用选项:
-  --env NAME        Conda 环境名称 (默认: ew_ai_worker)
+  --env NAME        Conda 环境名称 (默认: ew-ai-worker)
   --engine TYPE     推理引擎类型:
-                      cuda-vllm   - NVIDIA GPU + vLLM (推荐)
-                      cuda-trt    - NVIDIA GPU + TensorRT-LLM
-                      ascend-vllm - 华为 NPU + vLLM-Ascend
-                      ascend-mindie - 华为 NPU + MindIE Turbo
+                      cuda-vllm      - NVIDIA GPU + vLLM (推荐)
+                      cuda-trt       - NVIDIA GPU + TensorRT-LLM
+                      nvidia         - NVIDIA GPU + Transformers + bitsandbytes
+                      ascend-vllm    - 华为 NPU + vLLM-Ascend
+                      ascend-mindie  - 华为 NPU + MindIE Turbo
   --port PORT       Gateway 端口 (默认: 8080)
   --model ID        模型 ID
+  --skip-deps       跳过依赖安装
+  --skip-gradle     跳过 Gateway 构建
 
 示例:
-  # 初始化环境
-  ./ew setup --engine cuda-vllm
+  # 初始化 vLLM 环境
+  ./cy-llm setup --engine cuda-vllm
+
+  # 初始化 TRT 环境
+  ./cy-llm setup --engine cuda-trt
+
+  # 诊断环境
+  ./cy-llm doctor
+
+  # 转换模型为 TRT 引擎
+  ./cy-llm convert-trt --model Qwen/Qwen2.5-7B-Instruct --output /models/qwen2.5-7b-trt
 
   # 启动服务
-  ./ew start --engine cuda-vllm --model deepseek-v3
+  ./cy-llm start --engine cuda-vllm --model deepseek-v3
 
   # 后台启动
-  ./ew start -d
+  ./cy-llm start -d
 
   # Docker 部署
-  ./ew docker up --engine cuda-vllm --scale 2
+  ./cy-llm docker up --engine cuda-vllm --scale 2
 
   # 查看状态
-  ./ew status
+  ./cy-llm status
 
 环境变量:
   EW_ENGINE         默认推理引擎
@@ -489,12 +621,14 @@ main() {
         docker)     cmd_docker "$@" ;;
         stop)       cmd_stop "$@" ;;
         status)     cmd_status "$@" ;;
+        doctor)     cmd_doctor "$@" ;;
+        convert-trt) cmd_convert_trt "$@" ;;
         test)       cmd_test "$@" ;;
         models)     cmd_models "$@" ;;
         help|--help|-h) cmd_help ;;
         *)
             error "未知命令: $command"
-            echo "运行 './ew help' 查看帮助"
+            echo "运行 './cy-llm help' 查看帮助"
             exit 1
             ;;
     esac

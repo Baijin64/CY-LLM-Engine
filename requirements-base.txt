@@ -1,0 +1,31 @@
+# Base dependencies for CY-LLM Engine
+# 通用依赖，所有引擎共享
+
+# Configuration
+pydantic>=2.0.0,<3.0.0
+pydantic-settings>=2.0.0,<3.0.0
+
+# gRPC
+grpcio>=1.60.0,<2.0.0
+grpcio-tools>=1.60.0,<2.0.0
+protobuf>=4.0.0,<6.0.0
+
+# Utilities
+numpy>=1.24.0,<2.0.0
+scipy>=1.10.0
+psutil>=5.9.0
+tqdm>=4.65.0
+xxhash>=3.0.0
+watchdog>=3.0.0
+
+# HuggingFace ecosystem
+transformers>=4.36.0,<5.0.0
+tokenizers>=0.15.0
+huggingface-hub>=0.20.0
+safetensors>=0.4.0
+datasets>=2.15.0
+
+# Training (optional)
+peft>=0.7.0
+trl>=0.7.0
+sentencepiece>=0.2.0

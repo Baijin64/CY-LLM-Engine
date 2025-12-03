@@ -1,0 +1,24 @@
+# TensorRT-LLM Engine Dependencies
+# 适用于: cuda-trt
+
+-r requirements-base.txt
+
+# PyTorch (TRT-LLM 兼容 torch 2.1-2.3, CUDA 12.0)
+--extra-index-url https://download.pytorch.org/whl/cu121
+torch>=2.1.0,<2.4.0
+torchvision>=0.16.0,<0.19.0
+
+# TensorRT-LLM
+# 注意: 需从 NVIDIA 官方手动安装
+#
+# 安装方法：
+#   方法 1 (pip):
+#     pip install tensorrt_llm -U --pre --extra-index-url https://pypi.nvidia.com
+#
+#   方法 2 (NGC 容器):
+#     docker pull nvcr.io/nvidia/tensorrt-llm:latest
+#
+#   方法 3 (源码编译):
+#     https://github.com/NVIDIA/TensorRT-LLM
+#
+# tensorrt_llm>=0.11.0
