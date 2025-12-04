@@ -400,6 +400,7 @@ cmd_status() {
 
 cmd_diagnose() {
     local model_name="${CY_LLM_MODEL:-deepseek-v3}"
+    local verbose=false
 
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -407,6 +408,10 @@ cmd_diagnose() {
             --model)
                 model_name="$2"
                 shift 2
+                ;;
+            --verbose|-v)
+                verbose=true
+                shift
                 ;;
             *)
                 model_name="$1"
@@ -419,8 +424,9 @@ cmd_diagnose() {
 
     export CY_LLM_MODEL="$model_name"
     export CY_LLM_MODEL_REGISTRY_PATH="$BACKEND_DIR/deploy/config.json"
+    export CY_LLM_VERBOSE="$verbose"
 
-    PYTHONPATH="$BACKEND_DIR" CY_LLM_MODEL="$model_name" \
+    PYTHONPATH="$BACKEND_DIR" CY_LLM_MODEL="$model_name" CY_LLM_VERBOSE="$verbose" \
         python - <<'PY'
 import os
 from worker.config.config_loader import load_worker_config
@@ -434,6 +440,8 @@ from worker.utils.diagnostic import (
     format_compatibility_warnings,
 )
 from worker.utils.vram_optimizer import suggest_batch_optimization, suggest_kv_cache_strategy, get_vram_stats
+
+verbose = os.environ.get("CY_LLM_VERBOSE", "false").lower() == "true"
 
 config = load_worker_config(registry_path=os.environ.get("CY_LLM_MODEL_REGISTRY_PATH"))
 model_id = os.environ["CY_LLM_MODEL"]
@@ -450,6 +458,21 @@ if gpu.get("available"):
     print(f"  CUDA: {gpu.get('cuda')}")
 else:
     print("  GPU: 未检测到可用 CUDA 设备")
+
+# 对模型路径进行脱敏处理（非 verbose 模式）
+def sanitize_path(path: str) -> str:
+    """隐藏完整路径，仅显示模型名称"""
+    if not verbose and path:
+        parts = path.split("/")
+        if len(parts) > 2:
+            return f".../{parts[-2]}/{parts[-1]}" if len(parts[-1]) else f".../{parts[-2]}"
+        return parts[-1] if parts else path
+    return path
+
+# 显示模型路径（脱敏）
+model_path_display = sanitize_path(spec.model_path)
+if not verbose:
+    print("  (使用 --verbose 查看完整路径)")
 
 report = check_vram_for_model(model_id, spec)
 print("")
@@ -469,12 +492,15 @@ for line in format_compatibility_warnings(compat_warnings):
 # KV Cache 策略建议
 print("\nKV Cache 预分配策略:")
 free_gb, total_gb = get_vram_stats()
+engine_value = getattr(spec.engine, "value", spec.engine)
+engine_type = (engine_value or "cuda-vllm").lower()
 kv_suggestions = suggest_kv_cache_strategy(
     kv_cache_gb=report.kv_cache_gb,
     available_vram_gb=free_gb,
     max_model_len=spec.max_model_len or 8192,
     current_gpu_util=spec.gpu_memory_utilization or 0.75,
-    expected_qps=None  # 可以从环境变量读取
+    expected_qps=None,  # 可以从环境变量读取
+    engine_type=engine_type
 )
 if kv_suggestions:
     for suggestion in kv_suggestions:
@@ -484,8 +510,6 @@ else:
 
 # 批处理优化建议
 print("\n批处理优化建议:")
-engine_value = getattr(spec.engine, "value", spec.engine)
-engine_type = (engine_value or "cuda-vllm").lower()
 batch_suggestions = suggest_batch_optimization(
     engine_type=engine_type,
     kv_cache_gb=report.kv_cache_gb,
@@ -570,12 +594,12 @@ cmd_config() {
                 exit 1
             fi
 
-            PYTHONPATH="$BACKEND_DIR" python - <<PY
+            PYTHONPATH="$BACKEND_DIR" python - "$config_file" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-config_path = Path("$config_file")
+config_path = Path(sys.argv[1])
 
 # 检查 JSON 语法
 try:

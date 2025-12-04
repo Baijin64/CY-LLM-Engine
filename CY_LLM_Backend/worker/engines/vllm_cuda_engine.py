@@ -72,6 +72,7 @@ class VllmCudaEngine(BaseEngine):
         max_loras: int = 4,
         enable_prefix_caching: bool = False,
         kv_cache_dtype: Optional[str] = None,
+        allow_auto_tuning: bool = True,
         **kwargs
     ) -> None:
         """
@@ -86,16 +87,25 @@ class VllmCudaEngine(BaseEngine):
             max_loras: 最大同时加载的 LoRA 数量
             enable_prefix_caching: 启用前缀缓存（Automatic Prefix Caching）
             kv_cache_dtype: KV Cache 数据类型，"auto" 或 "fp8"
+            allow_auto_tuning: 是否允许自动调整参数以避免 OOM（默认 True）
         """
         _ensure_vllm_imported()
 
+        self.allow_auto_tuning = allow_auto_tuning
+
         # 验证 gpu_memory_utilization 安全性
         if gpu_memory_utilization > 0.90:
-            LOGGER.warning(
-                "gpu_memory_utilization=%.2f 过高，可能导致 OOM。自动调整为 0.85",
-                gpu_memory_utilization
-            )
-            gpu_memory_utilization = 0.85
+            if allow_auto_tuning:
+                LOGGER.warning(
+                    "gpu_memory_utilization=%.2f 过高，可能导致 OOM。自动调整为 0.85",
+                    gpu_memory_utilization
+                )
+                gpu_memory_utilization = 0.85
+            else:
+                LOGGER.warning(
+                    "gpu_memory_utilization=%.2f 过高，可能导致 OOM（allow_auto_tuning=False，保持原值）",
+                    gpu_memory_utilization
+                )
 
         self.tensor_parallel_size = tensor_parallel_size
         self.gpu_memory_utilization = gpu_memory_utilization
@@ -162,35 +172,45 @@ class VllmCudaEngine(BaseEngine):
                 LOGGER.info("\n%s", format_vram_report(estimate, verbose=True))
 
                 if not estimate.is_safe:
-                    # 尝试优化配置
-                    current_config = {
-                        "gpu_memory_utilization": self.gpu_memory_utilization,
-                        "max_model_len": self.max_model_len or 2048,
-                    }
-                    optimized = optimize_vram_config(estimate, current_config)
-
-                    # 应用优化后的配置
-                    if "gpu_memory_utilization" in optimized:
-                        old_util = self.gpu_memory_utilization
-                        self.gpu_memory_utilization = optimized["gpu_memory_utilization"]
+                    if not self.allow_auto_tuning:
                         LOGGER.warning(
-                            "⚙️  自动调整 gpu_memory_utilization: %.2f -> %.2f",
-                            old_util, self.gpu_memory_utilization
+                            "⚠️  VRAM 不足，但 allow_auto_tuning=False，保持原始配置加载"
                         )
+                        # 仍显示建议，但不自动调整
+                        if estimate.suggestions:
+                            LOGGER.warning("💡 建议:")
+                            for suggestion in estimate.suggestions:
+                                LOGGER.warning("   - %s", suggestion)
+                    else:
+                        # 尝试优化配置
+                        current_config = {
+                            "gpu_memory_utilization": self.gpu_memory_utilization,
+                            "max_model_len": self.max_model_len or 2048,
+                        }
+                        optimized = optimize_vram_config(estimate, current_config)
 
-                    if "max_model_len" in optimized and self.max_model_len != optimized["max_model_len"]:
-                        old_len = self.max_model_len or 2048
-                        self.max_model_len = optimized["max_model_len"]
-                        LOGGER.warning(
-                            "⚙️  自动调整 max_model_len: %d -> %d",
-                            old_len, self.max_model_len
-                        )
+                        # 应用优化后的配置
+                        if "gpu_memory_utilization" in optimized:
+                            old_util = self.gpu_memory_utilization
+                            self.gpu_memory_utilization = optimized["gpu_memory_utilization"]
+                            LOGGER.warning(
+                                "⚙️  自动调整 gpu_memory_utilization: %.2f -> %.2f",
+                                old_util, self.gpu_memory_utilization
+                            )
 
-                    # 显示优化建议
-                    if estimate.suggestions:
-                        LOGGER.warning("💡 其他建议:")
-                        for suggestion in estimate.suggestions:
-                            LOGGER.warning("   - %s", suggestion)
+                        if "max_model_len" in optimized and self.max_model_len != optimized["max_model_len"]:
+                            old_len = self.max_model_len or 2048
+                            self.max_model_len = optimized["max_model_len"]
+                            LOGGER.warning(
+                                "⚙️  自动调整 max_model_len: %d -> %d",
+                                old_len, self.max_model_len
+                            )
+
+                        # 显示优化建议
+                        if estimate.suggestions:
+                            LOGGER.warning("💡 其他建议:")
+                            for suggestion in estimate.suggestions:
+                                LOGGER.warning("   - %s", suggestion)
 
             except ImportError:
                 LOGGER.warning("vram_optimizer 未找到，跳过 VRAM 检查")

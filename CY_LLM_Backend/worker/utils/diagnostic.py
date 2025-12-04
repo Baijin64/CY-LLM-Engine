@@ -120,11 +120,27 @@ def check_vram_for_model(model_id: str, model_spec: ModelSpec) -> VRAMDiagnostic
 
 
 def format_vram_report(report: VRAMDiagnosticReport) -> str:
+    """格式化 VRAM 诊断报告为人类可读的字符串。
+    
+    Args:
+        report: VRAM 诊断报告对象
+        
+    Returns:
+        格式化的报告字符串
+    """
+    # 安全获取值，处理潜在的 None
+    model_id = report.model_id or "unknown"
+    message = report.message or "未知状态"
+    params = report.model_params_billion if report.model_params_billion is not None else 0.0
+    required = report.required_vram_gb if report.required_vram_gb is not None else 0.0
+    kv_cache = report.kv_cache_gb if report.kv_cache_gb is not None else 0.0
+    available = report.available_vram_gb if report.available_vram_gb is not None else 0.0
+    
     lines = [
-        f"[{report.model_id}] {report.message}",
-        f"  模型参数量: {report.model_params_billion:.1f}B",
-        f"  理论显存需求: {report.required_vram_gb:.1f}GB (含 KV Cache {report.kv_cache_gb:.2f}GB)",
-        f"  当前可用显存: {report.available_vram_gb:.1f}GB",
+        f"[{model_id}] {message}",
+        f"  模型参数量: {params:.1f}B",
+        f"  理论显存需求: {required:.1f}GB (含 KV Cache {kv_cache:.2f}GB)",
+        f"  当前可用显存: {available:.1f}GB",
     ]
     if not report.success and report.suggestions:
         lines.append("  建议:")
@@ -134,20 +150,30 @@ def format_vram_report(report: VRAMDiagnosticReport) -> str:
 
 
 def gather_gpu_summary() -> Dict[str, Optional[str]]:
+    """收集 GPU 硬件摘要信息。
+    
+    Returns:
+        包含 GPU 信息的字典，如果 GPU 不可用则返回 available=False
+    """
     if torch is None or not torch.cuda.is_available():
         return {"available": False}
-    device_idx = torch.cuda.current_device()
-    name = torch.cuda.get_device_name(device_idx)
-    total = get_total_vram_gb()
-    available = get_available_vram_gb()
-    cuda_version = f"{torch.version.cuda}" if torch.version.cuda else "unknown"
-    return {
-        "available": True,
-        "name": name,
-        "total": f"{total:.1f}GB",
-        "free": f"{available:.1f}GB",
-        "cuda": cuda_version,
-    }
+    
+    try:
+        device_idx = torch.cuda.current_device()
+        name = torch.cuda.get_device_name(device_idx) or "Unknown GPU"
+        total = get_total_vram_gb()
+        available = get_available_vram_gb()
+        cuda_version = f"{torch.version.cuda}" if torch.version.cuda else "unknown"
+        return {
+            "available": True,
+            "name": name,
+            "total": f"{total:.1f}GB",
+            "free": f"{available:.1f}GB",
+            "cuda": cuda_version,
+        }
+    except Exception as e:
+        LOGGER.warning("获取 GPU 信息失败: %s", e)
+        return {"available": False, "error": str(e)}
 
 
 def dependency_matrix() -> Dict[str, str]:

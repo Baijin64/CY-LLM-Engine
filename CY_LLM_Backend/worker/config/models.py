@@ -137,6 +137,12 @@ class ModelSpec(BaseModel):
     enable_prefix_caching: Optional[bool] = Field(None, description="启用前缀缓存")
     kv_cache_dtype: Optional[str] = Field(None, description="KV Cache 数据类型")
 
+    # 自动调优配置
+    allow_auto_tuning: bool = Field(
+        True,
+        description="允许引擎自动调整参数（如 gpu_memory_utilization、max_model_len）以避免 OOM"
+    )
+
     # Prompt 缓存
     enable_prompt_cache: Optional[bool] = Field(None, description="启用 Prompt 缓存")
     prompt_cache_ttl: Optional[int] = Field(None, ge=0, description="Prompt 缓存 TTL (秒)")

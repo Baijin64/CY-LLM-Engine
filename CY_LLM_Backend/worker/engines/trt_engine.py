@@ -199,20 +199,24 @@ class TensorRTEngine(BaseEngine):
                     pad_id=self._tokenizer.pad_token_id,
                 ):
                     # 解码完整输出，然后返回新增部分
-                    if hasattr(output, 'token_ids'):
-                        full_output_ids = output.token_ids[0] if isinstance(output.token_ids[0], list) else output.token_ids
-                    else:
-                        full_output_ids = output[0] if isinstance(output, list) else output
+                    try:
+                        if hasattr(output, 'token_ids'):
+                            full_output_ids = output.token_ids[0] if isinstance(output.token_ids[0], list) else output.token_ids
+                        else:
+                            full_output_ids = output[0] if isinstance(output, list) else output
 
-                    # 移除输入部分
-                    new_tokens = full_output_ids[input_length:]
-                    current_text = self._tokenizer.decode(new_tokens, skip_special_tokens=True)
+                        # 移除输入部分
+                        new_tokens = full_output_ids[input_length:]
+                        current_text = self._tokenizer.decode(new_tokens, skip_special_tokens=True)
 
-                    # 只返回新增的部分
-                    if len(current_text) > len(previous_text):
-                        new_text = current_text[len(previous_text):]
-                        previous_text = current_text
-                        yield new_text
+                        # 只返回新增的部分
+                        if len(current_text) > len(previous_text):
+                            new_text = current_text[len(previous_text):]
+                            previous_text = current_text
+                            yield new_text
+                    except (TypeError, IndexError, AttributeError) as parse_err:
+                        LOGGER.warning("TRT 输出解析失败，跳过此 chunk: %s", parse_err)
+                        continue
             else:
                 # 伪流式：完整生成后逐 token 返回
                 LOGGER.debug("TRT 版本不支持真流式，使用优化的伪流式（逐 token）")
