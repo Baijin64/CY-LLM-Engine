@@ -298,7 +298,7 @@ watch -n 1 nvidia-smi
 
 ✅ 语法检查
   ✅ Python 文件: 所有 5 个文件通过 pycompile
-  ✅ Bash 脚本: ew 脚本语法正确
+  ✅ Bash 脚本: `cy-llm` 脚本语法正确
 
 ✅ 集成测试
   ✅ VRAM 预检查: 正确集成到 vllm_cuda_engine.load_model()
@@ -307,7 +307,7 @@ watch -n 1 nvidia-smi
   ✅ convert-trt: 命令行接口验证
 
 ✅ 帮助文档
-  ✅ ew help 显示 convert-trt 命令
+  ✅ `cy-llm` help 显示 convert-trt 命令
   ✅ convert_trt.py --help 显示详细参数
 ```
 

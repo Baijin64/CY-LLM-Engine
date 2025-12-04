@@ -279,7 +279,8 @@ cd CY_LLM_Backend/coordinator
 
 ```
 CY-LLM-Engine/
-├── ew                          # 🔧 统一 CLI 工具
+├── cy                           # 🔧 主 CLI 工具
+├── cy-llm                       # 🔧 等价别名
 ├── CY_LLM_Backend/
 │   ├── gateway/                # Kotlin Gateway 服务
 │   │   └── src/main/kotlin/    # Spring WebFlux + gRPC

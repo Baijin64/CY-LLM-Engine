@@ -4,7 +4,7 @@
 #export HF_ENDPOINT="https://hf-mirror.com"
 # =============================================================================
 # CY-LLM Engine - 统一部署命令行工具
-# 用法: ./cy [command] [options] (兼容: ./cy-llm, 遗留: ./ew)
+# 用法: ./cy [command] [options] (首选: ./cy 或 ./cy-llm)
 # =============================================================================
 set -e
 
@@ -216,7 +216,7 @@ cmd_start() {
     info "Worker Port: $worker_port"
     info "Python: $python_path"
 
-    # 统一环境变量（优先 CY_LLM_*，兼容 EW_*）
+    # 统一环境变量（仅使用 CY_LLM_*）
     export CY_LLM_ENGINE="$engine"
     [[ -n "$model" ]] && export CY_LLM_MODEL="$model"
 
