@@ -123,10 +123,9 @@ def estimate_vram_requirements(
     free_gb, total_gb = get_vram_stats()
     available_gb = free_gb or total_gb
 
-    # 判断是否安全（保留 10% 或 0.5GB，取较大值作为安全余量）
-    safety_margin = max(available_gb * 0.1, 0.5)
-    safety_budget = available_gb - safety_margin
-    is_safe = total_per_gpu <= safety_budget
+    # 判断是否安全（保留 10% 余量，至少 1GB）
+    safety_budget = max(available_gb - 1.0, available_gb * 0.9)
+    is_safe = total_per_gpu <= max(safety_budget, 0.0)
 
     suggestions: List[str] = []
     if not is_safe:
