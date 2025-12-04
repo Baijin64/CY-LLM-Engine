@@ -150,6 +150,16 @@ class VllmCudaEngine(BaseEngine):
         """
         LOGGER.info("正在加载模型: %s", model_path)
         
+        # 从 kwargs 提取可覆盖的配置
+        max_model_len = kwargs.pop("max_model_len", None) or self.max_model_len
+        tensor_parallel_size = kwargs.pop("tensor_parallel_size", None) or self.tensor_parallel_size
+        enable_prefix_caching = kwargs.pop("enable_prefix_caching", None)
+        if enable_prefix_caching is None:
+            enable_prefix_caching = self.enable_prefix_caching
+        kv_cache_dtype = kwargs.pop("kv_cache_dtype", None) or self.kv_cache_dtype
+        gpu_memory_utilization = kwargs.pop("gpu_memory_utilization", None) or self.gpu_memory_utilization
+        quantization = kwargs.pop("quantization", None) or self.quantization
+
         # === VRAM 预检查 ===
         if not skip_vram_check:
             try:
@@ -161,11 +171,11 @@ class VllmCudaEngine(BaseEngine):
 
                 estimate = estimate_vram_requirements(
                     model_name_or_params=model_path,
-                    max_model_len=self.max_model_len or 2048,
+                    max_model_len=max_model_len or 2048,
                     dtype="fp16",
-                    quantization=self.quantization,
+                    quantization=quantization,
                     engine_type="vllm",
-                    tensor_parallel_size=self.tensor_parallel_size,
+                    tensor_parallel_size=tensor_parallel_size,
                 )
 
                 # 显示详细的 VRAM 估算报告
@@ -184,26 +194,26 @@ class VllmCudaEngine(BaseEngine):
                     else:
                         # 尝试优化配置
                         current_config = {
-                            "gpu_memory_utilization": self.gpu_memory_utilization,
-                            "max_model_len": self.max_model_len or 2048,
+                            "gpu_memory_utilization": gpu_memory_utilization,
+                            "max_model_len": max_model_len or 2048,
                         }
                         optimized = optimize_vram_config(estimate, current_config)
 
                         # 应用优化后的配置
                         if "gpu_memory_utilization" in optimized:
-                            old_util = self.gpu_memory_utilization
-                            self.gpu_memory_utilization = optimized["gpu_memory_utilization"]
+                            old_util = gpu_memory_utilization
+                            gpu_memory_utilization = optimized["gpu_memory_utilization"]
                             LOGGER.warning(
                                 "⚙️  自动调整 gpu_memory_utilization: %.2f -> %.2f",
-                                old_util, self.gpu_memory_utilization
+                                old_util, gpu_memory_utilization
                             )
 
-                        if "max_model_len" in optimized and self.max_model_len != optimized["max_model_len"]:
-                            old_len = self.max_model_len or 2048
-                            self.max_model_len = optimized["max_model_len"]
+                        if "max_model_len" in optimized and max_model_len != optimized["max_model_len"]:
+                            old_len = max_model_len or 2048
+                            max_model_len = optimized["max_model_len"]
                             LOGGER.warning(
                                 "⚙️  自动调整 max_model_len: %d -> %d",
-                                old_len, self.max_model_len
+                                old_len, max_model_len
                             )
 
                         # 显示优化建议
@@ -214,15 +224,6 @@ class VllmCudaEngine(BaseEngine):
 
             except ImportError:
                 LOGGER.warning("vram_optimizer 未找到，跳过 VRAM 检查")
-        
-        # 从 kwargs 提取可覆盖的配置
-        max_model_len = kwargs.pop("max_model_len", None) or self.max_model_len
-        tensor_parallel_size = kwargs.pop("tensor_parallel_size", None) or self.tensor_parallel_size
-        enable_prefix_caching = kwargs.pop("enable_prefix_caching", None)
-        if enable_prefix_caching is None:
-            enable_prefix_caching = self.enable_prefix_caching
-        kv_cache_dtype = kwargs.pop("kv_cache_dtype", None) or self.kv_cache_dtype
-        gpu_memory_utilization = kwargs.pop("gpu_memory_utilization", None) or self.gpu_memory_utilization
         
         # 合并配置
         llm_kwargs = {
@@ -250,17 +251,16 @@ class VllmCudaEngine(BaseEngine):
             llm_kwargs["kv_cache_dtype"] = kv_cache_dtype
             LOGGER.info("KV Cache 数据类型: %s", kv_cache_dtype)
             
-        # 量化配置（vLLM 支持 AWQ/GPTQ/FP8）
-        if self.quantization:
-            valid_vllm_quant = ["awq", "gptq", "fp8", "fp8_e5m2"]
-            if self.quantization.lower() in valid_vllm_quant:
-                llm_kwargs["quantization"] = self.quantization
-                LOGGER.info("使用量化方法: %s", self.quantization)
+        # 量化配置（vLLM 支持 AWQ/GPTQ/FP8/bitsandbytes）
+        if quantization:
+            valid_vllm_quant = ["awq", "gptq", "fp8", "fp8_e5m2", "bitsandbytes"]
+            if quantization.lower() in valid_vllm_quant:
+                llm_kwargs["quantization"] = quantization
+                LOGGER.info("使用量化方法: %s", quantization)
             else:
                 raise ValueError(
-                    f"vLLM 不支持量化方法 '{self.quantization}'。"
+                    f"vLLM 不支持量化方法 '{quantization}'。"
                     f"支持的方法: {', '.join(valid_vllm_quant)}。"
-                    f"如需使用 bitsandbytes，请切换到 nvidia 引擎。"
                 )
 
         # 合并额外参数
