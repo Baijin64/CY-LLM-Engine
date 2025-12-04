@@ -626,11 +626,7 @@ CY-LLM Engine - 统一部署命令行工具
     diagnose    环境与模型诊断
 
 常用选项:
-<<<<<<< HEAD
     --env NAME        Conda 环境名称 (默认: cy_llm_worker)
-=======
-    --env NAME        Conda 环境名称 (默认: cy_llm_worker)
->>>>>>> AI-backend
   --engine TYPE     推理引擎类型:
                       cuda-vllm      - NVIDIA GPU + vLLM (推荐)
                       cuda-trt       - NVIDIA GPU + TensorRT-LLM

@@ -53,15 +53,13 @@
 |------|------|------|
 | `cy` | ✅ 推荐 | 主 CLI 入口（新增） |
 | `cy-llm` | ✅ 推荐 | 等价别名（简化） |
-| `ew` | ⚠️ 遗留 | 仅作向后兼容（无文档宣传） |
+| `ew` | ❌ 已删除 | 已从仓库中移除 |
 
 **cy 脚本流程**:
 ```
 ./cy [command] [options]
   ↓
-./cy-llm [command] [options]  (转发)
-  ↓
-./ew [command] [options]  (实现脚本)
+./cy-llm [command] [options]  (实现脚本)
 ```
 
 **移除的内容**:
@@ -99,7 +97,7 @@
 ## 🔄 向后兼容性
 
 **保留的兼容机制**:
-- ✅ `ew` 脚本仍可调用（但无需使用）
+（已删除）`ew` 脚本不再可用，所有示例均使用 `cy`/`cy-llm`。
 - ✅ `CY_LLM_*` 环境变量完全功能正常
 - ✅ 所有现有部署脚本继续工作
 
@@ -127,7 +125,6 @@ export CY_LLM_CONDA_ENV=my_env
 CY-LLM-Engine/
 ├── cy                          # 🟢 主 CLI 入口
 ├── cy-llm                       # 🟢 等价别名  
-├── ew                           # 🔴 遗留脚本（不推荐）
 ├── CY_LLM_Backend/              # 🟢 唯一后端目录
 │   ├── coordinator/
 │   ├── gateway/
