@@ -132,6 +132,8 @@ class VllmCudaEngine(BaseEngine):
         model_path: str,
         adapter_path: Optional[str] = None,
         skip_vram_check: bool = False,
+        interactive: bool = False,
+        load_mode: str = "check_and_load",
         **kwargs
     ) -> None:
         """
@@ -141,6 +143,11 @@ class VllmCudaEngine(BaseEngine):
             model_path: HuggingFace 模型 ID 或本地路径
             adapter_path: LoRA 适配器路径（可选）
             skip_vram_check: 跳过 VRAM 预检查（默认 False）
+            interactive: 是否启用交互式量化选择（默认 False）
+            load_mode: 加载模式
+                - "check_only": 仅检查模型，不加载
+                - "check_and_load": 检查并加载（默认）
+                - "async_load": 异步加载
             **kwargs: 额外参数传递给 vLLM
                 - max_model_len: 覆盖实例配置的最大序列长度
                 - tensor_parallel_size: 覆盖实例配置的张量并行数
@@ -149,6 +156,53 @@ class VllmCudaEngine(BaseEngine):
                 - gpu_memory_utilization: 覆盖实例配置的显存利用率
         """
         LOGGER.info("正在加载模型: %s", model_path)
+        
+        # === 使用 ModelManager 进行模型准备 ===
+        try:
+            from worker.utils.model_manager import ModelManager, LoadMode, QuantizationType
+            
+            # 映射加载模式
+            mode_map = {
+                "check_only": LoadMode.CHECK_ONLY,
+                "check_and_load": LoadMode.CHECK_AND_LOAD,
+                "async_load": LoadMode.ASYNC_LOAD,
+            }
+            mode = mode_map.get(load_mode, LoadMode.CHECK_AND_LOAD)
+            
+            # 创建模型管理器
+            manager = ModelManager(
+                engine_type="vllm",
+                stall_threshold_seconds=180.0,  # 3 分钟停滞阈值
+                timeout_seconds=600.0,  # 10 分钟总超时
+            )
+            
+            # 准备模型（检测 -> 下载 -> 验证 -> 量化选择）
+            resolved_path, selected_quant = manager.prepare_model(
+                model_id=model_path,
+                mode=mode,
+                interactive=interactive,
+            )
+            
+            # 使用解析后的本地路径
+            model_path = str(resolved_path)
+            LOGGER.info("使用模型路径: %s", model_path)
+            
+            # 如果选择了量化，更新配置
+            if selected_quant and selected_quant != QuantizationType.NONE:
+                quant_value = selected_quant.value
+                if quant_value in ["awq", "gptq", "fp8"]:
+                    kwargs.setdefault("quantization", quant_value)
+                    LOGGER.info("应用量化配置: %s", quant_value)
+            
+            # 仅检查模式，直接返回
+            if mode == LoadMode.CHECK_ONLY:
+                LOGGER.info("✓ 模型检查完成（仅检查模式）")
+                return
+                
+        except ImportError:
+            LOGGER.warning("ModelManager 未找到，使用传统加载方式")
+        except Exception as e:
+            LOGGER.warning("ModelManager 准备失败: %s，使用传统加载方式", e)
         
         # 从 kwargs 提取可覆盖的配置
         max_model_len = kwargs.pop("max_model_len", None) or self.max_model_len

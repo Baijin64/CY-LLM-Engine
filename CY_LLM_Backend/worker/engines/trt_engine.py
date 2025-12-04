@@ -55,23 +55,28 @@ class TensorRTEngine(BaseEngine):
       - 最高性能：经过 TensorRT 优化的推理
       - 需要预编译：模型必须先转换为 TensorRT 引擎格式
       - 适合生产部署：固定模型场景下的最佳选择
+      - 支持 FP4 量化：新 NVIDIA 显卡（Ada/Hopper 架构）支持 FP4
       
     使用流程：
         1. 使用 TensorRT-LLM 工具将 HF 模型转换为 TRT 引擎
         2. 加载转换后的引擎文件
         
     示例：
-        >>> engine = TensorRTEngine()
+        >>> engine = TensorRTEngine(quantization="fp4")  # 使用 FP4 量化
         >>> engine.load_model("/path/to/trt_engine_dir")
         >>> for token in engine.infer("你好"):
         ...     print(token, end="", flush=True)
     """
+
+    # 支持的量化类型
+    SUPPORTED_QUANTIZATION = ["fp16", "fp8", "int8", "int4", "fp4", "none"]
 
     def __init__(
         self,
         max_batch_size: int = 8,
         max_input_len: int = 2048,
         max_output_len: int = 512,
+        quantization: Optional[str] = None,
         **kwargs
     ) -> None:
         """
@@ -81,22 +86,63 @@ class TensorRTEngine(BaseEngine):
             max_batch_size: 最大批处理大小
             max_input_len: 最大输入长度
             max_output_len: 最大输出长度
+            quantization: 量化类型 ("fp16", "fp8", "int8", "int4", "fp4")
+                - fp4: 仅支持 Ada/Hopper 架构 (RTX 40系/H100 等)
         """
         _ensure_trt_imported()
         
         self.max_batch_size = max_batch_size
         self.max_input_len = max_input_len
         self.max_output_len = max_output_len
+        self.quantization = quantization
         self.extra_kwargs = kwargs
+        
+        # 验证量化类型
+        if quantization and quantization.lower() not in self.SUPPORTED_QUANTIZATION:
+            raise ValueError(
+                f"不支持的量化类型: {quantization}. "
+                f"支持: {', '.join(self.SUPPORTED_QUANTIZATION)}"
+            )
+        
+        # FP4 架构检查
+        if quantization and quantization.lower() == "fp4":
+            self._check_fp4_support()
         
         self._runner: Optional[Any] = None
         self._tokenizer: Optional[Any] = None
         self._model_path: Optional[str] = None
         
         LOGGER.info(
-            "TensorRTEngine 初始化: batch=%d, input=%d, output=%d",
-            max_batch_size, max_input_len, max_output_len
+            "TensorRTEngine 初始化: batch=%d, input=%d, output=%d, quant=%s",
+            max_batch_size, max_input_len, max_output_len, quantization
         )
+
+    def _check_fp4_support(self) -> None:
+        """检查是否支持 FP4 量化（需要 Ada/Hopper 架构）"""
+        try:
+            import torch
+            if not torch.cuda.is_available():
+                LOGGER.warning("⚠️ CUDA 不可用，无法验证 FP4 支持")
+                return
+            
+            # 获取 GPU 计算能力
+            capability = torch.cuda.get_device_capability()
+            major, minor = capability
+            
+            # FP4 需要计算能力 >= 8.9 (Ada) 或 >= 9.0 (Hopper)
+            if major < 8 or (major == 8 and minor < 9):
+                gpu_name = torch.cuda.get_device_name()
+                LOGGER.warning(
+                    "⚠️ FP4 量化需要 Ada/Hopper 架构 (计算能力 >= 8.9)。\n"
+                    "   当前 GPU: %s (计算能力 %d.%d)\n"
+                    "   建议使用 INT4/INT8 替代",
+                    gpu_name, major, minor
+                )
+            else:
+                LOGGER.info("✓ GPU 支持 FP4 量化 (计算能力 %d.%d)", major, minor)
+                
+        except Exception as e:
+            LOGGER.warning("无法检查 FP4 支持: %s", e)
 
     def load_model(
         self,

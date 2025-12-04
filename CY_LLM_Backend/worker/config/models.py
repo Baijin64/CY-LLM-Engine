@@ -121,7 +121,7 @@ class ModelSpec(BaseModel):
     # 量化配置（新增标准字段）
     quantization: Optional[str] = Field(
         None,
-        description="量化方法: awq, gptq, bitsandbytes, fp8"
+        description="量化方法: awq, gptq, bitsandbytes, fp8, fp4(TRT专用), int8, int4"
     )
     use_4bit: Optional[bool] = Field(
         None,
@@ -147,6 +147,28 @@ class ModelSpec(BaseModel):
     enable_prompt_cache: Optional[bool] = Field(None, description="启用 Prompt 缓存")
     prompt_cache_ttl: Optional[int] = Field(None, ge=0, description="Prompt 缓存 TTL (秒)")
 
+    # === 新增：模型加载配置 ===
+    load_mode: Optional[str] = Field(
+        "check_and_load",
+        description="加载模式: check_only(仅检查), check_and_load(检查并加载), async_load(异步加载)"
+    )
+    interactive_quantization: bool = Field(
+        False,
+        description="是否启用交互式量化格式选择"
+    )
+    model_source: Optional[str] = Field(
+        "huggingface",
+        description="模型来源: huggingface, modelscope, local"
+    )
+    skip_validation: bool = Field(
+        False,
+        description="跳过模型验证（不推荐）"
+    )
+    use_safetensors: bool = Field(
+        True,
+        description="优先使用 safetensors 格式（更快更安全）"
+    )
+
     @field_validator("quantization", mode="before")
     @classmethod
     def validate_quantization(cls, v):
@@ -154,12 +176,27 @@ class ModelSpec(BaseModel):
         if v is None:
             return None
         v_lower = str(v).lower().strip()
-        valid_methods = ["awq", "gptq", "bitsandbytes", "fp8", "fp8_e5m2", "none"]
+        # 扩展支持的量化方法，包括 TensorRT 专用的 fp4
+        valid_methods = ["awq", "gptq", "bitsandbytes", "fp8", "fp8_e5m2", "fp4", "int8", "int4", "none"]
         if v_lower not in valid_methods:
             raise ValueError(
                 f"不支持的量化方法: {v}. 支持: {', '.join(valid_methods)}"
             )
         return None if v_lower == "none" else v_lower
+
+    @field_validator("load_mode", mode="before")
+    @classmethod
+    def validate_load_mode(cls, v):
+        """验证加载模式"""
+        if v is None:
+            return "check_and_load"
+        v_lower = str(v).lower().strip()
+        valid_modes = ["check_only", "check_and_load", "async_load"]
+        if v_lower not in valid_modes:
+            raise ValueError(
+                f"不支持的加载模式: {v}. 支持: {', '.join(valid_modes)}"
+            )
+        return v_lower
 
     @field_validator("gpu_memory_utilization", mode="before")
     @classmethod

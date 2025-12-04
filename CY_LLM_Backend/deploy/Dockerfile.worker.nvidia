@@ -55,7 +55,8 @@ RUN mkdir -p /models /checkpoints /etc/worker \
 USER ewai
 
 # 健康检查（通过 gRPC 健康检查端点）
-HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
+# start-period: 10 分钟，支持大模型加载
+HEALTHCHECK --interval=30s --timeout=30s --start-period=600s --retries=5 \
     CMD python3 -c "import grpc; from worker.proto_gen import AiInferenceStub, WorkerHealthRequest; \
         ch = grpc.insecure_channel('localhost:50051'); \
         stub = AiInferenceStub(ch); \
