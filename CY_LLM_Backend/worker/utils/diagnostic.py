@@ -21,6 +21,7 @@ except ImportError:  # pragma: no cover - py<3.8
 from packaging.version import InvalidVersion, parse
 
 from ..config.config_loader import ModelSpec
+from .vram_optimizer import estimate_vram_requirements, get_vram_stats
 
 LOGGER = logging.getLogger("cy_llm.worker.diagnostic")
 BYTE_PER_GB = 1024 ** 3
@@ -71,48 +72,48 @@ def estimate_kv_cache(max_model_len: int, tp_size: int) -> float:
 
 
 def get_available_vram_gb() -> float:
-    if torch is None or not torch.cuda.is_available():
-        return 0.0
-    free, _ = torch.cuda.mem_get_info()
-    return free / BYTE_PER_GB
+    free, _ = get_vram_stats()
+    return free
 
 
 def get_total_vram_gb() -> float:
-    if torch is None or not torch.cuda.is_available():
-        return 0.0
-    _, total = torch.cuda.mem_get_info()
-    return total / BYTE_PER_GB
+    _, total = get_vram_stats()
+    return total
 
 
 def check_vram_for_model(model_id: str, model_spec: ModelSpec) -> VRAMDiagnosticReport:
-    params_gb = estimate_model_params(model_spec)
-    base_vram = params_gb * 2.0
+    quantization = model_spec.quantization
+    if quantization is None and model_spec.use_4bit:
+        quantization = "bitsandbytes"
+
     max_len = model_spec.max_model_len or 8192
     tp_size = model_spec.tensor_parallel_size or 1
-    kv_cache = estimate_kv_cache(max_len, tp_size)
-    available = get_available_vram_gb()
-    required = base_vram + kv_cache
-    success = available >= required
-    suggestions: List[str] = []
-    if not success:
-        if not model_spec.use_4bit:
-            suggestions.append("启用 4bit/INT4 量化以显著降低模型体积。")
-        suggested_len = max(1024, int(max_len * available / max(required, 1.0)))
-        if suggested_len < max_len:
-            suggestions.append(f"降低 max_model_len 至 {suggested_len} (当前 {max_len}) 以缩减 KV Cache。")
-        current_util = model_spec.gpu_memory_utilization or 0.9
-        optimized_util = max(0.5, min(current_util * 0.85, 0.75))
-        suggestions.append(f"将 gpu_memory_utilization 调整至 {optimized_util:.2f}，留出足够余量。")
-    message = (
-        "显存充足" if success else "显存不足，无法加载模型"
+    engine_value = getattr(model_spec.engine, "value", model_spec.engine)
+    engine_type = (engine_value or "cuda-vllm").lower()
+
+    estimate = estimate_vram_requirements(
+        model_name_or_params=model_spec.model_path,
+        max_model_len=max_len,
+        dtype="fp16",
+        quantization=quantization,
+        engine_type=engine_type,
+        tensor_parallel_size=tp_size,
     )
+
+    params_gb = estimate_model_params(model_spec)
+    suggestions = list(estimate.suggestions)
+    if not suggestions and not estimate.is_safe:
+        suggestions.append("降低模型配置或切换到量化/多卡模式。")
+
+    message = "显存充足" if estimate.is_safe else "显存不足，无法加载模型"
+
     return VRAMDiagnosticReport(
         model_id=model_id,
         model_params_billion=params_gb,
-        kv_cache_gb=kv_cache,
-        required_vram_gb=required,
-        available_vram_gb=available,
-        success=success,
+        kv_cache_gb=estimate.kv_cache_gb,
+        required_vram_gb=estimate.required_gb,
+        available_vram_gb=estimate.available_gb,
+        success=estimate.is_safe,
         suggestions=suggestions,
         message=message,
     )

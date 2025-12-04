@@ -33,7 +33,7 @@ exceptions.py
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 
 # ============================================================================
@@ -335,15 +335,19 @@ class GPUMemoryError(ResourceError):
         required_mb: float,
         available_mb: float,
         device_id: int = 0,
+        suggestions: Optional[List[str]] = None,
     ):
+        details = {
+            "required_mb": required_mb,
+            "available_mb": available_mb,
+            "device_id": device_id,
+        }
+        if suggestions:
+            details["suggestions"] = suggestions
         super().__init__(
             f"GPU 显存不足: 需要 {required_mb:.0f}MB，可用 {available_mb:.0f}MB",
             code="GPU_MEMORY_ERROR",
-            details={
-                "required_mb": required_mb,
-                "available_mb": available_mb,
-                "device_id": device_id,
-            },
+            details=details,
         )
 
 

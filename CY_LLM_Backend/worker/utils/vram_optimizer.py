@@ -1,7 +1,7 @@
-"""VRAM 显存优化工具"""
+"""VRAM 显存优化与预检工具。"""
 
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
 import torch
 import re
 
@@ -15,10 +15,12 @@ class VRAMEstimate:
     kv_cache_gb: float
     activation_gb: float
     overhead_gb: float
-    total_per_gpu: float
+    required_gb: float
     available_gb: float
+    total_gb: float
     is_safe: bool
     recommendation: str
+    suggestions: List[str] = field(default_factory=list)
 
 
 def extract_param_count(model_name_or_path: str) -> float:
@@ -100,51 +102,58 @@ def estimate_vram_requirements(
         overhead_gb
     )
 
-    # 获取可用显存
-    available_gb = get_available_vram()
+    # 获取可用/总显存
+    free_gb, total_gb = get_vram_stats()
+    available_gb = free_gb or total_gb
 
-    # 判断是否安全（保留 15% 余量）
-    is_safe = total_per_gpu < available_gb * 0.85
+    # 判断是否安全（保留 10% 余量，至少 1GB）
+    safety_budget = max(available_gb - 1.0, available_gb * 0.9)
+    is_safe = total_per_gpu <= max(safety_budget, 0.0)
 
-    # 生成建议
-    if is_safe:
-        recommendation = "✅ 显存充足，可以加载"
-    else:
-        suggestions = []
+    suggestions: List[str] = []
+    if not is_safe:
         if quantization is None:
-            suggestions.append("启用 4-bit 量化（AWQ/GPTQ）")
+            suggestions.append("启用 4-bit 量化（AWQ/GPTQ 或 bitsandbytes）")
         if max_model_len > 2048:
             suggestions.append(f"降低 max_model_len 至 2048（当前 {max_model_len}）")
-        if tensor_parallel_size == 1 and available_gb < total_per_gpu / 2:
-            suggestions.append("使用多 GPU 张量并行")
-        recommendation = f"❌ 显存不足 (需要 {total_per_gpu:.1f}GB, 可用 {available_gb:.1f}GB)\n建议: " + "; ".join(suggestions)
+        if tensor_parallel_size == 1 and available_gb < total_per_gpu * 0.8:
+            suggestions.append("启用多 GPU 张量并行以分摊显存")
+        suggestions.append("降低 gpu_memory_utilization 或在配置中腾出更多显存")
+        recommendation = (
+            f"❌ 显存不足 (需要 {total_per_gpu:.1f}GB, 可用 {available_gb:.1f}GB)"
+        )
+    else:
+        recommendation = "✅ 显存充足，可以加载"
 
     return VRAMEstimate(
         model_weights_gb=model_weights_gb,
         kv_cache_gb=kv_cache_gb,
         activation_gb=activation_gb,
         overhead_gb=overhead_gb,
-        total_per_gpu=total_per_gpu,
+        required_gb=total_per_gpu,
         available_gb=available_gb,
+        total_gb=total_gb,
         is_safe=is_safe,
-        recommendation=recommendation
+        recommendation=recommendation,
+        suggestions=suggestions,
     )
 
 
-def get_available_vram() -> float:
-    """获取可用 VRAM（GB）"""
+def get_vram_stats() -> tuple[float, float]:
+    """返回 (free_gb, total_gb)。"""
     if torch.cuda.is_available():
-        return torch.cuda.get_device_properties(0).total_memory / BYTE_PER_GB
-    return 0.0
+        free, total = torch.cuda.mem_get_info()
+        return free / BYTE_PER_GB, total / BYTE_PER_GB
+    return 0.0, 0.0
 
 
-def optimize_vram_config(estimate: VRAMEstimate) -> dict:
+def optimize_vram_config(estimate: VRAMEstimate) -> Dict[str, float]:
     """根据估算结果优化配置"""
     config = {}
 
     if not estimate.is_safe:
         # 降低 gpu_memory_utilization
-        ratio = estimate.available_gb / estimate.total_per_gpu
+        ratio = estimate.available_gb / max(estimate.required_gb, 1e-6)
         config["gpu_memory_utilization"] = max(0.5, ratio * 0.7)
 
     return config

@@ -41,7 +41,7 @@ estimate = estimate_vram_requirements(
     engine_type="vllm"
 )
 
-print(f"需要显存: {estimate.total_per_gpu:.2f}GB")
+print(f"需要显存: {estimate.required_gb:.2f}GB")
 print(f"可用显存: {estimate.available_gb:.2f}GB")
 print(f"建议: {estimate.recommendation}")
 ```

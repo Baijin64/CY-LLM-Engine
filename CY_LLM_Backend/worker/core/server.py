@@ -16,6 +16,7 @@ import logging
 from ..engines.abstract_engine import BaseEngine
 from ..engines.engine_factory import create_engine
 from ..config.config_loader import ModelSpec, WorkerConfig
+from ..exceptions import GPUMemoryError
 from ..utils.diagnostic import check_vram_for_model, format_vram_report
 from .memory_manager import GPUMemoryManager
 from .task_scheduler import SchedulerBusy, TaskScheduler
@@ -72,53 +73,130 @@ class InferenceServer:
 
 	def _load_model_with_retry(
 		self,
+		model_id: str,
 		engine: BaseEngine,
 		model_path: str,
 		adapter_path: Optional[str],
-		base_kwargs: dict,
-		max_retries: int = 3
+		base_kwargs: Optional[dict],
+		*,
+		preflight_report=None,
+		max_retries: int = 4,
 	) -> None:
-		"""带自动重试的模型加载"""
+		"""带自动降级策略的模型加载。"""
 		import gc
 		import torch
-		
-		from ..utils.vram_optimizer import estimate_vram_requirements
-		
-		# 渐进式降级配置
-		retry_configs = [
-			base_kwargs,  # 尝试 1: 用户配置
-			{**base_kwargs, "gpu_memory_utilization": 0.70},  # 尝试 2: 降低显存
-			{**base_kwargs, "gpu_memory_utilization": 0.60, "max_model_len": 4096},  # 尝试 3
-			{**base_kwargs, "gpu_memory_utilization": 0.50, "max_model_len": 2048},  # 尝试 4
-		]
 
-		for attempt, config in enumerate(retry_configs[:max_retries], 1):
+		base_kwargs = dict(base_kwargs or {})
+		retry_plan = self._build_retry_plan(base_kwargs, max_retries)
+		attempts = len(retry_plan)
+		last_error: Optional[Exception] = None
+
+		for attempt, overrides in enumerate(retry_plan, 1):
+			effective_kwargs = {**base_kwargs, **overrides}
 			try:
-				# 更新引擎配置
-				for key, value in config.items():
-					if hasattr(engine, key):
-						setattr(engine, key, value)
-
-				engine.load_model(model_path, adapter_path)
-
-				if attempt > 1:
-					LOGGER.warning("模型加载成功（尝试 %d/%d）", attempt, max_retries)
+				engine.load_model(
+					model_path,
+					adapter_path,
+					**effective_kwargs,
+				)
+				if overrides:
+					LOGGER.warning(
+						"模型 %s 加载成功（尝试 %d/%d，降级配置: %s）",
+						model_id,
+						attempt,
+						attempts,
+						overrides,
+					)
 				return
-
-			except RuntimeError as e:
-				if "out of memory" in str(e).lower():
-					LOGGER.warning("OOM (尝试 %d/%d): %s", attempt, max_retries, config)
-					# 清理显存
-					gc.collect()
-					if torch.cuda.is_available():
-						torch.cuda.empty_cache()
-
-					if attempt < max_retries:
-						continue
-					else:
-						raise RuntimeError(f"OOM，已重试 {max_retries} 次") from e
-				else:
+			except RuntimeError as exc:
+				if not self._is_cuda_oom(exc):
 					raise
+				last_error = exc
+				LOGGER.warning(
+					"模型 %s 加载 OOM（尝试 %d/%d），参数: %s",
+					model_id,
+					attempt,
+					attempts,
+					effective_kwargs,
+				)
+				gc.collect()
+				if torch.cuda.is_available():
+					torch.cuda.empty_cache()
+
+		if last_error is not None:
+			free_mb = 0.0
+			if torch.cuda.is_available():
+				free, _total = torch.cuda.mem_get_info()
+				free_mb = free / (1024 ** 2)
+			suggestions = []
+			if preflight_report and preflight_report.suggestions:
+				suggestions.extend(preflight_report.suggestions)
+			suggestions.append("尝试启用 AWQ/GPTQ 量化或降低 batch/max_model_len")
+			raise GPUMemoryError(
+				required_mb=(preflight_report.required_vram_gb * 1024) if preflight_report else 0.0,
+				available_mb=free_mb,
+				suggestions=list(dict.fromkeys(suggestions)),
+			) from last_error
+
+	def _build_retry_plan(self, base_kwargs: dict, max_retries: int) -> List[dict]:
+		plan: List[dict] = [{}]
+		base_util = float(base_kwargs.get("gpu_memory_utilization") or 0.75)
+		base_max_len = int(base_kwargs.get("max_model_len") or 8192)
+
+		plan.append({"gpu_memory_utilization": min(base_util, 0.70)})
+		plan.append({
+			"gpu_memory_utilization": min(base_util, 0.60),
+			"max_model_len": min(base_max_len, 4096),
+		})
+		plan.append({
+			"gpu_memory_utilization": 0.55,
+			"max_model_len": min(base_max_len, 2048),
+		})
+
+		return plan[:max_retries]
+
+	@staticmethod
+	def _is_cuda_oom(exc: Exception) -> bool:
+		message = str(exc).lower()
+		return "out of memory" in message or "cuda error" in message
+
+	def _apply_vram_headroom_adjustments(
+		self,
+		report,
+		engine_kwargs: Optional[Dict],
+		model_spec: Optional[ModelSpec],
+	) -> Optional[Dict]:
+		if report is None:
+			return engine_kwargs
+		kwargs = dict(engine_kwargs or {})
+		if report.required_vram_gb <= 0 or report.available_vram_gb <= 0:
+			return kwargs or None
+
+		available_ratio = report.available_vram_gb / max(report.required_vram_gb, 1e-6)
+		adjusted = False
+
+		if available_ratio < 1.15:
+			current_util = float(kwargs.get("gpu_memory_utilization") or getattr(model_spec, "gpu_memory_utilization", 0.75) or 0.75)
+			recommended_util = round(max(0.55, min(current_util, available_ratio * 0.85)), 2)
+			if recommended_util < current_util:
+				kwargs["gpu_memory_utilization"] = recommended_util
+				adjusted = True
+
+		if available_ratio < 1.05:
+			base_max_len = int(kwargs.get("max_model_len") or getattr(model_spec, "max_model_len", 8192) or 8192)
+			new_len = max(2048, int(base_max_len * available_ratio * 0.95))
+			if new_len < base_max_len:
+				kwargs["max_model_len"] = new_len
+				adjusted = True
+
+		if adjusted:
+			LOGGER.warning(
+				"VRAM 余量不足 (%.2fx)，自动调整推理配置: %s",
+				available_ratio,
+				kwargs,
+			)
+
+		return kwargs or None
 
 	def ensure_model(
 		self,
@@ -142,23 +220,35 @@ class InferenceServer:
 			if engine is not None:
 				return engine
 
+			preflight_report = None
 			model_spec = self._resolve_model_spec(model_id)
 			if model_spec is not None:
-				report = check_vram_for_model(model_id, model_spec)
-				if not report.success:
-					LOGGER.error(format_vram_report(report))
-					raise RuntimeError("显存不足，无法加载模型: %s" % model_id)
+				preflight_report = check_vram_for_model(model_id, model_spec)
+				if not preflight_report.success:
+					LOGGER.error(format_vram_report(preflight_report))
+					raise GPUMemoryError(
+						required_mb=preflight_report.required_vram_gb * 1024,
+						available_mb=preflight_report.available_vram_gb * 1024,
+						suggestions=preflight_report.suggestions,
+					)
+				engine_kwargs = self._apply_vram_headroom_adjustments(
+					preflight_report,
+					engine_kwargs,
+					model_spec,
+				)
 
 			# 通过工厂创建引擎并加载模型，然后交由内存管理器注册
 			engine = self._engine_factory(engine_type)
 			
 			# 使用带重试的模型加载
 			self._load_model_with_retry(
+				model_id,
 				engine,
 				model_path,
 				adapter_path,
 				engine_kwargs or {},
-				max_retries=3
+				preflight_report=preflight_report,
+				max_retries=4,
 			)
 			
 			self._memory.register_model(model_id, engine)
