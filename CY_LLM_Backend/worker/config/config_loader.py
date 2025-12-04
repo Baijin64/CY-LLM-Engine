@@ -83,61 +83,12 @@ SUPPORTED_ENGINES: List[str] = [
 
 
 # ============================================================================
-# 数据类定义
+# 使用统一的 Pydantic 配置模型，避免在多个地方重复定义同一数据结构。
+# 这里直接从 `config.models` 导入 `ModelSpec`、`HardwareProfile` 和 `WorkerConfig`。
+# 这样可以保证字段一致性（例如 quantization 字段）并在测试中保持兼容性。
 # ============================================================================
 
-@dataclass(frozen=True)
-class HardwareProfile:
-    """描述当前节点的硬件能力。"""
-
-    has_cuda: bool
-    cuda_device_count: int
-    has_ascend: bool
-    ascend_device_count: int
-    
-    @property
-    def primary_device(self) -> str:
-        """返回主要设备类型"""
-        if self.has_ascend:
-            return "ascend"
-        elif self.has_cuda:
-            return "cuda"
-        else:
-            return "cpu"
-
-
-@dataclass(frozen=True)
-class ModelSpec:
-    """记录单个逻辑模型对应的物理加载信息。"""
-
-    model_path: str
-    adapter_path: Optional[str] = None
-    engine: Optional[str] = None      # 可为单个模型指定引擎
-    use_4bit: Optional[bool] = None
-    max_model_len: Optional[int] = None
-    tensor_parallel_size: Optional[int] = None
-    # KV Cache 优化配置
-    enable_prefix_caching: Optional[bool] = None  # 启用前缀缓存
-    kv_cache_dtype: Optional[str] = None          # KV Cache 数据类型 (auto, fp8)
-    gpu_memory_utilization: Optional[float] = None  # GPU 显存利用率 (0.0-1.0)
-    # Prompt 缓存配置
-    enable_prompt_cache: Optional[bool] = None    # 启用 Prompt 结果缓存
-    prompt_cache_ttl: Optional[int] = None        # Prompt 缓存 TTL (秒)
-
-
-@dataclass(frozen=True)
-class WorkerConfig:
-    """Worker 启动时需要的聚合配置。"""
-
-    preferred_backend: str            # 引擎类型
-    hardware: HardwareProfile
-    model_registry: Dict[str, ModelSpec] = field(default_factory=dict)
-    
-    def get_engine_type(self) -> str:
-        """获取规范化的引擎类型"""
-        # 优先级：
-        #   1. CY_LLM_ENGINE 或 CY_LLM_BACKEND 环境变量
-        #   2. 根据硬件自动选择（CUDA -> cuda-vllm, Ascend -> ascend-vllm）
+from .models import ModelSpec, HardwareProfile, WorkerConfig
 # ============================================================================
 # 硬件检测
 # ============================================================================
