@@ -25,7 +25,7 @@
 
 | 文件 | 行数 | 功能 |
 |------|------|------|
-| `EW_AI_Backend/worker/utils/vram_optimizer.py` | 172 | VRAM 估算和优化 |
+| `CY_LLM_Backend/worker/utils/vram_optimizer.py` | 172 | VRAM 估算和优化 |
 | `scripts/convert_trt.py` | 59 | TRT 模型转换工具 |
 | `docs/TRT_GUIDE.md` | 336 | TensorRT-LLM 完整指南 |
 
@@ -33,10 +33,10 @@
 
 | 文件 | 变更 | 影响范围 |
 |------|------|---------|
-| `EW_AI_Backend/worker/engines/vllm_cuda_engine.py` | +52 行 | 集成 VRAM 预检查 |
-| `EW_AI_Backend/worker/core/server.py` | +58 行 | OOM 自动重试逻辑 |
-| `EW_AI_Backend/worker/engines/trt_engine.py` | +25 行 | 改进流式输出 |
-| `ew` | +47 行 | 新增 convert-trt 命令 |
+| `CY_LLM_Backend/worker/engines/vllm_cuda_engine.py` | +52 行 | 集成 VRAM 预检查 |
+| `CY_LLM_Backend/worker/core/server.py` | +58 行 | OOM 自动重试逻辑 |
+| `CY_LLM_Backend/worker/engines/trt_engine.py` | +25 行 | 改进流式输出 |
+| `cy` / `cy-llm` | +47 行 | 新增 convert-trt 命令 (`ew` 为兼容别名) |
 
 ---
 
@@ -208,7 +208,7 @@ trtllm-build \
 **使用示例**:
 
 ```bash
-./ew convert-trt \
+./cy convert-trt \
   --model Qwen/Qwen2.5-7B-Instruct \
   --output /models/qwen2.5-7b-trt \
   --dtype float16 \
@@ -226,13 +226,13 @@ trtllm-build \
 
 #### 集成到 ew 脚本 ✅
 
-**文件**: `ew` 脚本
+**文件**: `cy` / `cy-llm` 脚本 (`ew` 作为兼容别名仍存在)
 
 **新增命令**: `cmd_convert_trt()`
 
 ```bash
 # 命令结构
-./ew convert-trt \
+./cy convert-trt \
   --model <hf_model_id> \
   --output <trt_engine_dir> \
   [--model-type llama] \
@@ -243,7 +243,7 @@ trtllm-build \
   [--max-output-len 2048]
 
 # 帮助信息
-./ew help | grep -A 2 "convert-trt"
+  ./cy help | grep -A 2 "convert-trt"
 # 输出: convert-trt 转换模型为 TensorRT-LLM 引擎
 ```
 
@@ -270,15 +270,15 @@ trtllm-build \
 
 ```bash
 # 快速开始
-./ew setup --engine cuda-trt
-./ew convert-trt --model Qwen/Qwen2.5-7B-Instruct --output /models/qwen2.5-7b-trt
-./ew start --engine cuda-trt --model qwen2.5-7b-trt
+./cy setup --engine cuda-trt
+./cy convert-trt --model Qwen/Qwen2.5-7B-Instruct --output /models/qwen2.5-7b-trt
+./cy start --engine cuda-trt --model qwen2.5-7b-trt
 
 # 多 GPU 张量并行
-./ew convert-trt --model Qwen/Qwen2.5-70B --output /models/qwen2.5-70b-trt --tp-size 2
+./cy convert-trt --model Qwen/Qwen2.5-70B --output /models/qwen2.5-70b-trt --tp-size 2
 
 # 问题排查
-./ew doctor
+./cy doctor
 tail -f logs/worker.log
 watch -n 1 nvidia-smi
 ```
@@ -345,18 +345,18 @@ watch -n 1 nvidia-smi
 git pull origin AI-backend
 
 # 2. 验证新文件
-ls -la EW_AI_Backend/worker/utils/vram_optimizer.py
+ls -la CY_LLM_Backend/worker/utils/vram_optimizer.py
 ls -la scripts/convert_trt.py
 ls -la docs/TRT_GUIDE.md
 
 # 3. 运行诊断
-./ew doctor
+./cy doctor
 
 # 4. 测试 VRAM 预估（可选）
-python -c "from EW_AI_Backend.worker.utils.vram_optimizer import *; print(estimate_vram_requirements('Qwen/Qwen2.5-7B'))"
+python -c "from CY_LLM_Backend.worker.utils.vram_optimizer import *; print(estimate_vram_requirements('Qwen/Qwen2.5-7B'))"
 
 # 5. 测试 convert-trt 命令
-./ew convert-trt --help
+./cy convert-trt --help
 ```
 
 ### 下一步 (可选)

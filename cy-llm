@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Lightweight wrapper so users can run `./cy-llm` in place of `./ew`.
+# Lightweight wrapper so users can run `./cy-llm` (alias `./cy`) in place of `./ew`.
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "$SCRIPT_DIR/ew" ]]; then
+  # Forward to legacy script for compatibility
   exec "$SCRIPT_DIR/ew" "$@"
 else
-  echo "cy-llm wrapper requires 'ew' script in same directory; Please ensure you run from repo root with 'ew' present." >&2
+  echo "cy-llm wrapper requires the canonical 'cy-llm' implementation or legacy 'ew' present in repo root; Please ensure you run from repo root." >&2
   exit 1
 fi

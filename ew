@@ -8,8 +8,9 @@
 # =============================================================================
 set -e
 
-if [[ "$(basename "$0")" == "ew" ]]; then
-    echo "⚠️  Warning: 'ew' is deprecated. Please use './cy-llm' instead." >&2
+if [[ "$(basename \"$0\")" == "ew" ]]; then
+    echo "⚠️  Warning: 'ew' is deprecated. Please use './cy' or './cy-llm' instead." >&2
+    echo "To migrate, replace your aliases and scripts to point to './cy' or './cy-llm'. 'ew' will remain as a legacy shim for now." >&2
 fi
 
 # 颜色输出
@@ -205,13 +206,13 @@ cmd_start() {
     
     local python_path=$(get_python_path "$env_name")
     if [[ -z "$python_path" ]]; then
-        error "环境 '$env_name' 未找到，请先运行: ./ew setup"
+        error "环境 '$env_name' 未找到，请先运行: ./cy setup 或 ./ew setup (兼容)"
         exit 1
     fi
     
     local jar_path="$GATEWAY_DIR/build/libs/gateway-0.0.1-SNAPSHOT.jar"
     if [[ ! -f "$jar_path" ]]; then
-        error "Gateway JAR 未找到，请先运行: ./ew setup"
+        error "Gateway JAR 未找到，请先运行: ./cy setup 或 ./ew setup (兼容)"
         exit 1
     fi
     
@@ -593,8 +594,8 @@ cmd_convert_trt() {
     done
 
     if [[ -z "$model" || -z "$output" ]]; then
-        error "用法: ./ew convert-trt --model <model> --output <output>"
-        error "示例: ./ew convert-trt --model Qwen/Qwen2.5-7B-Instruct --output /models/qwen2.5-7b-trt"
+        error "用法: ./cy convert-trt --model <model> --output <output> (兼容: ./ew convert-trt)"
+        error "示例: ./cy convert-trt --model Qwen/Qwen2.5-7B-Instruct --output /models/qwen2.5-7b-trt (兼容: ./ew)"
         exit 1
     fi
 

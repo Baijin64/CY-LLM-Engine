@@ -74,7 +74,7 @@
 cd deploy
 docker compose up -d
 
-# 或使用 cy-llm 命令行工具（兼容 ./ew）
+# 或使用 cy-llm 命令行工具（兼容 ./cy；`ew` 为遗留兼容别名）
 ./cy-llm docker up
 
 # 查看日志

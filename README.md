@@ -7,7 +7,7 @@
 ## ✨ 特性
 
 - **四种推理引擎**: `cuda-vllm` / `cuda-trt` / `ascend-vllm` / `ascend-mindie`
-- **一键部署**: 统一的 `./cy-llm` 命令行工具（兼容 `./ew`，`ew` 将逐步弃用）
+- **一键部署**: 统一的 `./cy-llm` 命令行工具（兼容 `./cy`、`./cy-llm`；`ew` 为遗留兼容别名，已弃用并将在未来移除）
 - **流式推理**: SSE 实时流式返回
 - **企业级网关**: Kotlin + Spring WebFlux 响应式架构
 - **弹性伸缩**: 支持多 Worker 实例
@@ -22,7 +22,7 @@
 # 1. 初始化环境
 cd CY_LLM_Backend/worker
 ./cy-llm setup --engine cuda-vllm
-### 3) 使用 CLI（`./cy-llm`，兼容 `./ew`）
+### 3) 使用 CLI（`./cy-llm` / `./cy`；`ew` 为遗留兼容别名）
   ./cy-llm setup --engine cuda-vllm       # 初始化
   ./cy-llm start --model qwen2.5-72b      # 启动指定模型
 ```
@@ -33,7 +33,7 @@ cd CY_LLM_Backend/gateway
 cd CY_LLM_Backend/coordinator
 
 cd CY_LLM_Backend/deploy
-CLI `cy-llm`（兼容 `ew`）提供多种便捷操作：
+CLI `cy-llm`（等价 `./cy`；`ew` 为遗留兼容别名）提供多种便捷操作：
   ./cy-llm start --engine cuda-vllm --model furina # 启动服务
   CY_LLM_MODEL=deepseek-v3     # 默认模型（优先）
   ./cy-llm stop                                     # 停止所有服务
@@ -41,7 +41,7 @@ CLI `cy-llm`（兼容 `ew`）提供多种便捷操作：
   ./cy-llm test integration
   ./cy-llm test unit
   ./cy-llm test all
-├── cy-llm                      # 🔧 统一 CLI 命令行工具 (兼容 `ew`)
+├── cy-llm                      # 🔧 统一 CLI 命令行工具 (`ew` 为遗留兼容别名)
 ## 📦 安装
 
 ### 环境要求
@@ -124,7 +124,7 @@ git clone https://github.com/Baijin64/CY-LLM-Engine.git
 
 示例:
   ./cy-llm setup --engine cuda-vllm       # 初始化
-  ./cy-llm start --model qwen2.5-72b      # 启动指定模型
+  ./cy start --model qwen2.5-72b      # 启动指定模型 (或 ./cy-llm)
   ./cy-llm start -d                       # 后台启动
   ./cy-llm docker up --scale 2            # Docker 双 Worker
   ./cy-llm status                         # 查看状态

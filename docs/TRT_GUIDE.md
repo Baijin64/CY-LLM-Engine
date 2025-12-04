@@ -23,7 +23,7 @@ pip install tensorrt_llm -U --pre --extra-index-url https://pypi.nvidia.com
 使用内置工具转换 HuggingFace 模型：
 
 ```bash
-./ew convert-trt \
+./cy convert-trt \
   --model Qwen/Qwen2.5-7B-Instruct \
   --output /models/qwen2.5-7b-trt \
   --max-batch-size 64 \
@@ -62,7 +62,7 @@ pip install tensorrt_llm -U --pre --extra-index-url https://pypi.nvidia.com
     "qwen2.5-7b-trt": {
       "engine": "cuda-trt",
       "model_path": "/models/qwen2.5-7b-trt",
-      "max_batch_size": 64,
+./cy convert-trt \
       "max_input_len": 4096,
       "max_output_len": 2048,
       "dtype": "float16",
@@ -74,19 +74,19 @@ pip install tensorrt_llm -U --pre --extra-index-url https://pypi.nvidia.com
 
 ## 4. 启动 TRT 引擎
 
-### 初始化环境
+./cy setup --engine cuda-trt
 
 ```bash
-./ew setup --engine cuda-trt
+./cy setup --engine cuda-trt
 ```
 
-### 启动服务
+./cy start --engine cuda-trt --model qwen2.5-7b-trt
 
 ```bash
-./ew start --engine cuda-trt --model qwen2.5-7b-trt
+./cy start --engine cuda-trt --model qwen2.5-7b-trt
 ```
 
-### 测试推理
+./cy convert-trt \
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/inference/stream \
@@ -101,31 +101,31 @@ curl -X POST http://localhost:8080/api/v1/inference/stream \
 ## 5. 性能调优
 
 ### 批处理大小
-
+./cy setup --engine cuda-vllm --env cy-vllm
 根据显存调整 `max_batch_size`：
 
-- **GPU 显存 < 12GB**: max_batch_size = 16-32
+./cy setup --engine cuda-trt --env cy-trt
 - **GPU 显存 12-24GB**: max_batch_size = 32-64
 - **GPU 显存 > 24GB**: max_batch_size = 64-128
-
-### 序列长度
+./cy start --engine cuda-vllm --env cy-vllm --model my-model
+./cy start --engine cuda-trt --env cy-trt --model my-model-trt
 
 `max_input_len` 和 `max_output_len` 在编译时固化，修改后需要重新转换模型：
 
 ```bash
-./ew convert-trt \
-  --model Qwen/Qwen2.5-7B-Instruct \
+./cy convert-trt \
+./cy status
   --output /models/qwen2.5-7b-trt-8k \
   --max-input-len 8192 \
   --max-output-len 4096
 ```
 
-### 张量并行（多 GPU）
+./cy stop
 
 在多 GPU 系统上使用张量并行加速：
 
 ```bash
-./ew convert-trt \
+./cy convert-trt \
   --model Qwen/Qwen2.5-70B \
   --output /models/qwen2.5-70b-trt \
   --tp-size 2  # 使用 2 个 GPU
@@ -153,7 +153,7 @@ curl -X POST http://localhost:8080/api/v1/inference/stream \
 - **bfloat16**: 改进的精度，显存占用相同，某些 GPU 速度更快
 
 ```bash
-./ew convert-trt \
+./cy convert-trt \
   --model Qwen/Qwen2.5-7B-Instruct \
   --output /models/qwen2.5-7b-trt-bf16 \
   --dtype bfloat16
@@ -167,14 +167,14 @@ A: 使用不同的 Conda 环境隔离：
 
 ```bash
 # 创建 vLLM 环境
-./ew setup --engine cuda-vllm --env ew-vllm
+./cy setup --engine cuda-vllm --env cy-vllm
 
 # 创建 TRT 环境
-./ew setup --engine cuda-trt --env ew-trt
+./cy setup --engine cuda-trt --env cy-trt
 
 # 分别启动
-./ew start --engine cuda-vllm --env ew-vllm --model my-model
-./ew start --engine cuda-trt --env ew-trt --model my-model-trt
+./cy start --engine cuda-vllm --env cy-vllm --model my-model
+./cy start --engine cuda-trt --env cy-trt --model my-model-trt
 ```
 
 ### Q: 流式输出不工作？
@@ -224,7 +224,7 @@ A: TRT 引擎显存占用通常大于 vLLM。如果显存不足：
 tail -f logs/worker.log
 
 # 查看服务状态
-./ew status
+./cy status
 ```
 
 ### 性能监控
@@ -242,7 +242,7 @@ watch -n 1 nvidia-smi
 ```bash
 # Worker 会自动管理模型卸载
 # 手动清理显存：
-./ew stop
+./cy stop
 nvidia-smi  # 验证显存已释放
 ```
 

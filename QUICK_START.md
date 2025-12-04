@@ -7,7 +7,7 @@
 模型加载时会自动运行 VRAM 预检查：
 
 ```python
-from EW_AI_Backend.worker.engines.vllm_cuda_engine import VllmCudaEngine
+from CY_LLM_Backend.worker.engines.vllm_cuda_engine import VllmCudaEngine
 
 engine = VllmCudaEngine(
     max_model_len=2048,
@@ -31,7 +31,7 @@ WARNING: 自动调整 gpu_memory_utilization: 0.90 -> 0.65
 ### 2. 手动估算显存（可选）
 
 ```python
-from EW_AI_Backend.worker.utils.vram_optimizer import estimate_vram_requirements
+from CY_LLM_Backend.worker.utils.vram_optimizer import estimate_vram_requirements
 
 estimate = estimate_vram_requirements(
     model_name_or_params="Qwen/Qwen2.5-7B-Instruct",
@@ -50,15 +50,15 @@ print(f"建议: {estimate.recommendation}")
 
 ```bash
 # 查看帮助
-./ew convert-trt --help
+./cy convert-trt --help  # or ./cy-llm convert-trt --help (legacy: `./ew`)
 
 # 转换模型
-./ew convert-trt \
+./cy convert-trt \
   --model Qwen/Qwen2.5-7B-Instruct \
   --output /models/qwen2.5-7b-trt
 
 # 使用自定义参数
-./ew convert-trt \
+./cy convert-trt \
   --model Qwen/Qwen2.5-7B-Instruct \
   --output /models/qwen2.5-7b-trt \
   --dtype float16 \
@@ -71,13 +71,13 @@ print(f"建议: {estimate.recommendation}")
 
 ```bash
 # 初始化环境
-./ew setup --engine cuda-trt
+./cy setup --engine cuda-trt
 
 # 启动服务
-./ew start --engine cuda-trt --model qwen2.5-7b-trt
+./cy start --engine cuda-trt --model qwen2.5-7b-trt
 
 # 查看状态
-./ew status
+./cy status
 ```
 
 ## 📊 新增特性对照表
@@ -88,7 +88,7 @@ print(f"建议: {estimate.recommendation}")
 | **VRAM 预估** | vram_optimizer.py | 手动或自动 | 可选手动调用 |
 | **OOM 自动重试** | server.py | 自动 | 无，自动处理 |
 | **TRT 真流式** | trt_engine.py | 自动 | 无，自动处理 |
-| **TRT 转换工具** | scripts/convert_trt.py | 手动 | `./ew convert-trt ...` |
+| **TRT 转换工具** | scripts/convert_trt.py | 手动 | `./cy convert-trt ...` |
 | **TRT 使用文档** | docs/TRT_GUIDE.md | 参考 | 查看文档 |
 
 ## 🔍 关键文件位置
@@ -96,7 +96,7 @@ print(f"建议: {estimate.recommendation}")
 ### 代码文件
 
 ```
-EW_AI_Backend/worker/
+CY_LLM_Backend/worker/
 ├── utils/
 │   └── vram_optimizer.py          # VRAM 预估和优化
 ├── engines/
@@ -121,38 +121,38 @@ PHASE2_3_UPGRADE_REPORT.md         # 升级详细报告
 ### 脚本
 
 ```
-ew                                 # 主脚本（已添加 convert-trt 命令）
+cy / cy-llm                         # 主脚本（`ew` 为遗留兼容别名，已弃用）
 ```
 
 ## ⚡ 常见命令速查
 
 ```bash
-# 诊断环境
-./ew doctor
+  # 诊断环境
+  ./cy doctor
 
 # 初始化 vLLM 环境
-./ew setup --engine cuda-vllm
+./cy setup --engine cuda-vllm
 
 # 初始化 TRT 环境
-./ew setup --engine cuda-trt
+./cy setup --engine cuda-trt
 
 # 转换模型为 TRT
-./ew convert-trt --model <model> --output <dir>
+./cy convert-trt --model <model> --output <dir>
 
 # 启动 vLLM 服务
-./ew start --engine cuda-vllm --model <model>
+./cy start --engine cuda-vllm --model <model>
 
 # 启动 TRT 服务
-./ew start --engine cuda-trt --model <model>
+./cy start --engine cuda-trt --model <model>
 
 # 停止服务
-./ew stop
+./cy stop
 
 # 查看状态
-./ew status
+./cy status
 
 # 帮助信息
-./ew help
+./cy help
 ```
 
 ## 🐛 故障排除
@@ -223,7 +223,7 @@ curl -i http://localhost:8080/api/v1/health
 
 1. **总是运行 doctor 命令**
    ```bash
-   ./ew doctor
+  ./cy doctor
    ```
 
 2. **转换 TRT 后测试**
@@ -236,7 +236,7 @@ curl -i http://localhost:8080/api/v1/health
 3. **为常用模型预编译 TRT**
    ```bash
    # 提前转换，避免首次启动慢
-   ./ew convert-trt --model Qwen/Qwen2.5-7B --output /models/qwen2.5-7b-trt
+  ./cy convert-trt --model Qwen/Qwen2.5-7B --output /models/qwen2.5-7b-trt
    ```
 
 4. **定期监控显存**
@@ -249,7 +249,7 @@ curl -i http://localhost:8080/api/v1/health
 
 - 详细升级报告: `PHASE2_3_UPGRADE_REPORT.md`
 - TRT 完整指南: `docs/TRT_GUIDE.md`
-- 源代码: `EW_AI_Backend/worker/utils/vram_optimizer.py`
+- 源代码: `CY_LLM_Backend/worker/utils/vram_optimizer.py`
 - 转换工具: `scripts/convert_trt.py`
 
 ---

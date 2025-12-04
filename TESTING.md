@@ -83,16 +83,16 @@ CI 流程（建议）:
 1. 运行 Python lints（ruff/flake8/black）
 2. 运行 `pytest --maxfail=1 --disable-warnings -q`
 3. 运行 `./gradlew test` 在 Kotlin 项目中
-4. 如果有需要，运行集成测试（`./ew test integration`）
+4. 如果有需要，运行集成测试（`./cy test integration` / `./cy-llm test integration`）
 
 ## 运行本地端到端测试
 
-在 `CY_LLM_Backend/deploy/docker-compose.yml` 或 `./ew start` 启动所有服务后，可运行 `CY_LLM_Backend/tests/test_integration.py`。
+在 `CY_LLM_Backend/deploy/docker-compose.yml` 或 `./cy start` 启动所有服务后，可运行 `CY_LLM_Backend/tests/test_integration.py`。
 
 ```bash
 cd CY_LLM_Backend
 # 启动服务
-./ew start --engine cuda-vllm
+./cy start --engine cuda-vllm
 python -m pytest tests/test_integration.py -q
 ```
 
