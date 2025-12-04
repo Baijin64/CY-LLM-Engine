@@ -9,7 +9,7 @@ CY_LLM_Backend/
 │   └── ai_service.proto                 # [Core] gRPC 定义：StreamPredict、ControlMessage、Backpressure（占位）
 ├── gateway/ (Kotlin Spring Boot)
 │   ├── build.gradle.kts                 # [构建] Gradle Kotlin DSL 占位
-│   ├── Dockerfile.gateway               # [部署] Gateway 占位 Dockerfile（Java 21 LTS 基础镜像）
+│   ├── Dockerfile.gateway               # [部署] Gateway 占位 Dockerfile（Java 21 LTS 基础镜像）,使用时应修改/src/main/resources/application.yml的文件路径
 │   └── src/main/kotlin/com/cy/llm/
 │       ├── Application.kt               # [启动] Spring Boot 启动类占位
 │       ├── config/
