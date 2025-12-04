@@ -148,19 +148,8 @@ class AiInferenceServicerImpl(AiInferenceServicer):
             engine_type_str = str(engine_type).lower()
 
             if "vllm" in engine_type_str:
-                # vLLM 只支持 AWQ/GPTQ/FP8 预量化模型
-                if quantization == "bitsandbytes":
-                    LOGGER.error(
-                        "[%s] vLLM 不支持 bitsandbytes 量化。"
-                        "请使用 AWQ/GPTQ 预量化模型，或切换到 nvidia 引擎",
-                        trace_id
-                    )
-                    context.abort(
-                        grpc.StatusCode.INVALID_ARGUMENT,
-                        "vLLM engine does not support bitsandbytes. Use AWQ/GPTQ models or switch to nvidia engine."
-                    )
-                    return
-                elif quantization in ["awq", "gptq", "fp8", "fp8_e5m2"]:
+                # vLLM 支持 AWQ/GPTQ/FP8/bitsandbytes
+                if quantization in ["awq", "gptq", "fp8", "fp8_e5m2", "bitsandbytes"]:
                     engine_kwargs["quantization"] = quantization
                     LOGGER.info("[%s] 使用 vLLM 量化: %s", trace_id, quantization)
                 else:
