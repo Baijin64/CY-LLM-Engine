@@ -1,11 +1,28 @@
 """VRAM 显存优化与预检工具。"""
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
-import torch
+from typing import Dict, List, Optional, Tuple
 import re
+import logging
 
+# 延迟导入 torch，避免在无 GPU 环境下报错
+_torch = None
+
+LOGGER = logging.getLogger("cy_llm.worker.vram_optimizer")
 BYTE_PER_GB = 1024 ** 3
+
+
+def _get_torch():
+    """延迟加载 torch，返回 None 如果不可用"""
+    global _torch
+    if _torch is None:
+        try:
+            import torch
+            _torch = torch
+        except ImportError:
+            LOGGER.debug("torch 未安装，VRAM 检测功能将受限")
+            return None
+    return _torch
 
 
 @dataclass
@@ -161,18 +178,30 @@ def estimate_vram_requirements(
     )
 
 
-def get_vram_stats() -> tuple[float, float]:
-    """返回 (free_gb, total_gb)。"""
-    if torch.cuda.is_available():
-        free, total = torch.cuda.mem_get_info()
-        return free / BYTE_PER_GB, total / BYTE_PER_GB
+def get_vram_stats() -> Tuple[float, float]:
+    """返回 (free_gb, total_gb)。如果 torch 不可用则返回 (0.0, 0.0)。"""
+    torch = _get_torch()
+    if torch is None:
+        return 0.0, 0.0
+    try:
+        if torch.cuda.is_available():
+            free, total = torch.cuda.mem_get_info()
+            return free / BYTE_PER_GB, total / BYTE_PER_GB
+    except Exception as e:
+        LOGGER.warning("获取 VRAM 信息失败: %s", e)
     return 0.0, 0.0
 
 
 def get_gpu_count() -> int:
-    """返回可用的 GPU 数量。"""
-    if torch.cuda.is_available():
-        return torch.cuda.device_count()
+    """返回可用的 GPU 数量。如果 torch 不可用则返回 0。"""
+    torch = _get_torch()
+    if torch is None:
+        return 0
+    try:
+        if torch.cuda.is_available():
+            return torch.cuda.device_count()
+    except Exception as e:
+        LOGGER.warning("获取 GPU 数量失败: %s", e)
     return 0
 
 
@@ -196,13 +225,19 @@ def recommend_tensor_parallel_size(
     if available_gpus <= 1:
         return 1, "只有 1 个 GPU 可用"
 
+    # 边界检查：防止除零或非法值
+    if per_gpu_vram_gb <= 0.1:
+        return 1, "单卡显存信息不可用或过小"
+
     # 如果单卡足够，不需要张量并行
     if total_required_gb <= per_gpu_vram_gb * 0.85:
         return 1, "单卡显存充足"
 
     # 计算需要多少个 GPU 才能容纳模型权重
     # 权重会被分片，其他部分（KV Cache、激活值）每卡都需要
-    min_gpus_for_weights = max(1, int(model_weights_gb / (per_gpu_vram_gb * 0.6)) + 1)
+    # 添加安全下限，避免除零
+    safe_per_gpu = max(per_gpu_vram_gb * 0.6, 1.0)
+    min_gpus_for_weights = max(1, int(model_weights_gb / safe_per_gpu) + 1)
 
     # 限制在可用 GPU 数量内
     recommended_tp = min(min_gpus_for_weights, available_gpus)
@@ -323,6 +358,96 @@ def progressive_retry_configs(base_config: Dict) -> List[Dict]:
     configs.append(config4)
 
     return configs
+
+
+def suggest_kv_cache_strategy(
+    kv_cache_gb: float,
+    available_vram_gb: float,
+    max_model_len: int,
+    current_gpu_util: float,
+    expected_qps: Optional[int] = None,
+    engine_type: Optional[str] = None
+) -> List[str]:
+    """KV Cache 预分配策略建议
+
+    Args:
+        kv_cache_gb: 当前 KV Cache 预估占用
+        available_vram_gb: 可用显存
+        max_model_len: 最大序列长度
+        current_gpu_util: 当前 gpu_memory_utilization 设置
+        expected_qps: 预期 QPS（可选）
+        engine_type: 引擎类型（可选），用于检查 fp8 支持
+
+    Returns:
+        KV Cache 优化建议列表
+    """
+    suggestions = []
+    kv_ratio = kv_cache_gb / max(available_vram_gb, 0.1)
+    
+    # 检查引擎是否支持 fp8 KV Cache
+    engine_lower = (engine_type or "").lower()
+    supports_fp8_kv = "vllm" in engine_lower
+
+    # 基于并发场景的建议
+    if expected_qps is not None:
+        if expected_qps <= 10:
+            # 低并发：可以降低 gpu_memory_utilization
+            if current_gpu_util > 0.70:
+                suggestions.append(
+                    f"🎯 低并发场景 (QPS≤10)：建议降低 gpu_memory_utilization 至 0.70 "
+                    f"（当前 {current_gpu_util:.2f}）以节省显存"
+                )
+        elif expected_qps <= 50:
+            # 中并发：推荐 0.75
+            if current_gpu_util < 0.70 or current_gpu_util > 0.80:
+                suggestions.append(
+                    f"🎯 中并发场景 (QPS 10-50)：建议设置 gpu_memory_utilization=0.75 "
+                    f"（当前 {current_gpu_util:.2f}）"
+                )
+        else:
+            # 高并发：推荐 0.85
+            if current_gpu_util < 0.80:
+                suggestions.append(
+                    f"🎯 高并发场景 (QPS>50)：建议提升 gpu_memory_utilization 至 0.85 "
+                    f"（当前 {current_gpu_util:.2f}）以支持更多并发请求"
+                )
+
+    # 基于序列长度的建议
+    if max_model_len <= 2048:
+        suggestions.append(
+            f"✅ max_model_len={max_model_len} 较小，KV Cache 占用低，适合高并发"
+        )
+    elif max_model_len <= 8192:
+        suggestions.append(
+            f"⚡ max_model_len={max_model_len}：平衡配置，"
+            f"KV Cache 占用 {kv_cache_gb:.1f}GB ({kv_ratio*100:.0f}% 显存)"
+        )
+    else:
+        suggestions.append(
+            f"⚠️  max_model_len={max_model_len} 较大，"
+            f"KV Cache 占用 {kv_cache_gb:.1f}GB ({kv_ratio*100:.0f}% 显存)，"
+            "高并发时需要监控显存使用率"
+        )
+        if kv_ratio > 0.5:
+            suggestions.append(
+                "💡 考虑降低 max_model_len 或启用 Prefix Caching 以优化长序列场景"
+            )
+
+    # KV Cache dtype 优化建议 - 仅对支持 fp8 的引擎建议
+    if kv_cache_gb > 5.0:
+        if supports_fp8_kv:
+            suggestions.append(
+                f"💡 KV Cache 占用 {kv_cache_gb:.1f}GB 较大，"
+                "可考虑设置 kv_cache_dtype='fp8' 以节省 50% KV Cache 显存"
+                "（需验证 CUDA 版本兼容性）"
+            )
+        else:
+            suggestions.append(
+                f"💡 KV Cache 占用 {kv_cache_gb:.1f}GB 较大，"
+                "考虑切换到 vLLM 引擎以使用 kv_cache_dtype='fp8' 节省显存"
+            )
+
+    return suggestions
 
 
 def suggest_batch_optimization(
