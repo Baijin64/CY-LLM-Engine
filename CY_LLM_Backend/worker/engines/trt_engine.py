@@ -152,49 +152,71 @@ class TensorRTEngine(BaseEngine):
         **kwargs
     ) -> Generator[str, None, None]:
         """
-        流式推理（改进版）。
-        
+        流式推理（优化版 - 逐 token 解码）。
+
         Args:
             prompt: 输入提示
             **kwargs: 生成参数
-            
+
         Yields:
             生成的文本 token
         """
         if self._runner is None or self._tokenizer is None:
             raise RuntimeError("引擎未加载，请先调用 load_model()")
-        
+
         # Tokenize 输入
         input_ids = self._tokenizer.encode(prompt, return_tensors="pt")
-        
+        input_length = len(input_ids.squeeze())
+
         # 生成参数
         max_new_tokens = kwargs.get("max_new_tokens", kwargs.get("max_tokens", 512))
         temperature = kwargs.get("temperature", 0.7)
         top_p = kwargs.get("top_p", 0.9)
-        
+
         try:
-            # 尝试使用 TensorRT-LLM 的真流式 API
+            # 尝试使用 TensorRT-LLM 的真流式 API（较新版本支持）
+            streaming_supported = False
             try:
-                # 检查是否支持流式输出
+                # 检查 generate 方法签名是否支持 streaming
+                import inspect
+                sig = inspect.signature(self._runner.generate)
+                streaming_supported = 'streaming' in sig.parameters
+            except Exception:
+                pass
+
+            if streaming_supported:
+                # 真流式输出（逐 token）
+                LOGGER.debug("使用 TensorRT 真流式输出")
+                previous_text = ""
+
                 for output in self._runner.generate(
-                    input_ids=input_ids,
+                    batch_input_ids=[input_ids.squeeze().tolist()],
                     max_new_tokens=max_new_tokens,
-                    streaming=True,  # 启用真流式
+                    streaming=True,
                     temperature=temperature,
                     top_p=top_p,
                     end_id=self._tokenizer.eos_token_id,
                     pad_id=self._tokenizer.pad_token_id,
                 ):
-                    # 解码最新 token
-                    token_id = output.token_ids[-1]
-                    token_text = self._tokenizer.decode([token_id], skip_special_tokens=True)
-                    yield token_text
-                    
-            except (TypeError, AttributeError):
-                # 回退到伪流式（兼容旧版本 TRT）
-                LOGGER.warning("TRT 版本不支持真流式，使用伪流式")
+                    # 解码完整输出，然后返回新增部分
+                    if hasattr(output, 'token_ids'):
+                        full_output_ids = output.token_ids[0] if isinstance(output.token_ids[0], list) else output.token_ids
+                    else:
+                        full_output_ids = output[0] if isinstance(output, list) else output
 
-                # 完整生成后逐字符返回
+                    # 移除输入部分
+                    new_tokens = full_output_ids[input_length:]
+                    current_text = self._tokenizer.decode(new_tokens, skip_special_tokens=True)
+
+                    # 只返回新增的部分
+                    if len(current_text) > len(previous_text):
+                        new_text = current_text[len(previous_text):]
+                        previous_text = current_text
+                        yield new_text
+            else:
+                # 伪流式：完整生成后逐 token 返回
+                LOGGER.debug("TRT 版本不支持真流式，使用优化的伪流式（逐 token）")
+
                 outputs = self._runner.generate(
                     batch_input_ids=[input_ids.squeeze().tolist()],
                     max_new_tokens=max_new_tokens,
@@ -202,18 +224,24 @@ class TensorRTEngine(BaseEngine):
                     pad_id=self._tokenizer.pad_token_id,
                     temperature=temperature,
                     top_p=top_p,
-                    streaming=False,
                 )
-                
+
                 if outputs is not None and len(outputs) > 0:
                     output_ids = outputs[0]
-                    # 移除输入部分
-                    new_tokens = output_ids[len(input_ids.squeeze()):]
-                    generated_text = self._tokenizer.decode(new_tokens, skip_special_tokens=True)
+                    new_tokens = output_ids[input_length:]
 
-                    for char in generated_text:
-                        yield char
-                    
+                    # 逐 token 解码和返回（而不是逐字符）
+                    previous_text = ""
+                    for i in range(1, len(new_tokens) + 1):
+                        current_text = self._tokenizer.decode(
+                            new_tokens[:i],
+                            skip_special_tokens=True
+                        )
+                        if len(current_text) > len(previous_text):
+                            new_text = current_text[len(previous_text):]
+                            previous_text = current_text
+                            yield new_text
+
         except Exception as e:
             LOGGER.error("TensorRT 推理失败: %s", e)
             raise

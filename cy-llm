@@ -430,7 +430,10 @@ from worker.utils.diagnostic import (
     gather_gpu_summary,
     check_dependencies,
     format_dependency_summary,
+    check_version_compatibility,
+    format_compatibility_warnings,
 )
+from worker.utils.vram_optimizer import suggest_batch_optimization, get_vram_stats
 
 config = load_worker_config(registry_path=os.environ.get("CY_LLM_MODEL_REGISTRY_PATH"))
 model_id = os.environ["CY_LLM_MODEL"]
@@ -457,6 +460,28 @@ print("\n依赖检查:")
 statuses = check_dependencies()
 for line in format_dependency_summary(statuses):
     print(line)
+
+print("\n版本兼容性检查:")
+compat_warnings = check_version_compatibility()
+for line in format_compatibility_warnings(compat_warnings):
+    print(line)
+
+# 批处理优化建议
+print("\n批处理优化建议:")
+free_gb, total_gb = get_vram_stats()
+engine_value = getattr(spec.engine, "value", spec.engine)
+engine_type = (engine_value or "cuda-vllm").lower()
+batch_suggestions = suggest_batch_optimization(
+    engine_type=engine_type,
+    kv_cache_gb=report.kv_cache_gb,
+    available_vram_gb=free_gb,
+    max_model_len=spec.max_model_len or 8192
+)
+if batch_suggestions:
+    for suggestion in batch_suggestions:
+        print(f"  {suggestion}")
+else:
+    print("  （当前引擎无特定批处理优化建议）")
 PY
 }
 

@@ -198,3 +198,204 @@ def format_dependency_summary(statuses: List[DependencyStatus]) -> List[str]:
         version = status.installed or "未安装"
         lines.append(f"  {prefix} {status.name} ({version}) - {status.detail}")
     return lines
+
+
+@dataclass
+class CompatibilityWarning:
+    """版本兼容性警告"""
+    level: str  # "error", "warning", "info"
+    component1: str
+    version1: str
+    component2: str
+    version2: Optional[str]
+    message: str
+    suggestion: str
+
+
+def check_version_compatibility() -> List[CompatibilityWarning]:
+    """检查包之间的版本兼容性
+
+    Returns:
+        兼容性警告列表
+    """
+    warnings: List[CompatibilityWarning] = []
+
+    # 获取已安装的包版本
+    try:
+        torch_version = importlib_metadata.version("torch") if torch else None
+        vllm_version = None
+        trt_version = None
+        cuda_version = None
+
+        try:
+            vllm_version = importlib_metadata.version("vllm")
+        except importlib_metadata.PackageNotFoundError:
+            pass
+
+        try:
+            trt_version = importlib_metadata.version("tensorrt-llm")
+        except importlib_metadata.PackageNotFoundError:
+            pass
+
+        if torch and torch.version.cuda:
+            cuda_version = torch.version.cuda
+
+    except Exception as e:
+        LOGGER.warning("获取包版本时出错: %s", e)
+        return warnings
+
+    # === 检查 1: PyTorch vs CUDA 兼容性 ===
+    if torch_version and cuda_version:
+        try:
+            torch_parsed = parse(torch_version)
+
+            # PyTorch 2.4+ 需要 CUDA 12.1+
+            if torch_parsed >= parse("2.4.0"):
+                cuda_major = int(cuda_version.split(".")[0])
+                cuda_minor = int(cuda_version.split(".")[1]) if len(cuda_version.split(".")) > 1 else 0
+
+                if cuda_major < 12 or (cuda_major == 12 and cuda_minor < 1):
+                    warnings.append(CompatibilityWarning(
+                        level="error",
+                        component1="torch",
+                        version1=torch_version,
+                        component2="CUDA",
+                        version2=cuda_version,
+                        message=f"PyTorch {torch_version} 需要 CUDA 12.1+，当前 CUDA {cuda_version}",
+                        suggestion="升级 CUDA 到 12.1+ 或降级 PyTorch 到 2.1-2.3 版本"
+                    ))
+
+            # PyTorch 2.1-2.3 兼容 CUDA 11.8 和 12.x
+            elif parse("2.1.0") <= torch_parsed < parse("2.4.0"):
+                cuda_major = int(cuda_version.split(".")[0])
+                if cuda_major not in [11, 12]:
+                    warnings.append(CompatibilityWarning(
+                        level="warning",
+                        component1="torch",
+                        version1=torch_version,
+                        component2="CUDA",
+                        version2=cuda_version,
+                        message=f"PyTorch {torch_version} 推荐使用 CUDA 11.8 或 12.x",
+                        suggestion="考虑使用推荐的 CUDA 版本以获得最佳性能"
+                    ))
+
+        except (InvalidVersion, ValueError, IndexError):
+            pass
+
+    # === 检查 2: vLLM vs PyTorch 兼容性 ===
+    if vllm_version and torch_version:
+        try:
+            vllm_parsed = parse(vllm_version)
+            torch_parsed = parse(torch_version)
+
+            # vLLM 0.6+ 需要 PyTorch 2.4+
+            if vllm_parsed >= parse("0.6.0") and torch_parsed < parse("2.4.0"):
+                warnings.append(CompatibilityWarning(
+                    level="error",
+                    component1="vllm",
+                    version1=vllm_version,
+                    component2="torch",
+                    version2=torch_version,
+                    message=f"vLLM {vllm_version} 需要 PyTorch 2.4+，当前 PyTorch {torch_version}",
+                    suggestion="升级 PyTorch: pip install 'torch>=2.4.0' --extra-index-url https://download.pytorch.org/whl/cu121"
+                ))
+
+            # vLLM 0.5.x 兼容 PyTorch 2.1-2.4
+            elif parse("0.5.0") <= vllm_parsed < parse("0.6.0"):
+                if not (parse("2.1.0") <= torch_parsed < parse("2.5.0")):
+                    warnings.append(CompatibilityWarning(
+                        level="warning",
+                        component1="vllm",
+                        version1=vllm_version,
+                        component2="torch",
+                        version2=torch_version,
+                        message=f"vLLM {vllm_version} 推荐 PyTorch 2.1-2.4",
+                        suggestion="考虑使用推荐的 PyTorch 版本"
+                    ))
+
+        except (InvalidVersion, ValueError):
+            pass
+
+    # === 检查 3: TensorRT-LLM vs PyTorch 兼容性 ===
+    if trt_version and torch_version:
+        try:
+            torch_parsed = parse(torch_version)
+
+            # TensorRT-LLM 通常需要 PyTorch 2.1-2.3（不支持 2.4+）
+            if torch_parsed >= parse("2.4.0"):
+                warnings.append(CompatibilityWarning(
+                    level="error",
+                    component1="tensorrt-llm",
+                    version1=trt_version,
+                    component2="torch",
+                    version2=torch_version,
+                    message=f"TensorRT-LLM 不支持 PyTorch {torch_version}（需要 2.1-2.3）",
+                    suggestion="降级 PyTorch: pip install 'torch>=2.1.0,<2.4.0' --extra-index-url https://download.pytorch.org/whl/cu121"
+                ))
+
+            elif torch_parsed < parse("2.1.0"):
+                warnings.append(CompatibilityWarning(
+                    level="warning",
+                    component1="tensorrt-llm",
+                    version1=trt_version,
+                    component2="torch",
+                    version2=torch_version,
+                    message=f"TensorRT-LLM 推荐 PyTorch 2.1+，当前 {torch_version}",
+                    suggestion="升级 PyTorch 到 2.1-2.3 版本范围"
+                ))
+
+        except (InvalidVersion, ValueError):
+            pass
+
+    # === 检查 4: vLLM 和 TensorRT-LLM 共存冲突 ===
+    if vllm_version and trt_version:
+        warnings.append(CompatibilityWarning(
+            level="error",
+            component1="vllm",
+            version1=vllm_version,
+            component2="tensorrt-llm",
+            version2=trt_version,
+            message="vLLM 和 TensorRT-LLM 不应安装在同一环境（PyTorch 版本冲突）",
+            suggestion="使用 ./cy-llm setup --engine cuda-vllm 或 --engine cuda-trt 创建独立环境"
+        ))
+
+    return warnings
+
+
+def format_compatibility_warnings(warnings: List[CompatibilityWarning]) -> List[str]:
+    """格式化兼容性警告
+
+    Args:
+        warnings: 兼容性警告列表
+
+    Returns:
+        格式化的警告信息列表
+    """
+    if not warnings:
+        return ["  ✓ 所有依赖版本兼容"]
+
+    lines: List[str] = []
+
+    # 按严重程度分组
+    errors = [w for w in warnings if w.level == "error"]
+    warns = [w for w in warnings if w.level == "warning"]
+    infos = [w for w in warnings if w.level == "info"]
+
+    if errors:
+        lines.append("  ❌ 严重兼容性问题:")
+        for w in errors:
+            lines.append(f"     • {w.message}")
+            lines.append(f"       建议: {w.suggestion}")
+
+    if warns:
+        lines.append("  ⚠️  兼容性警告:")
+        for w in warns:
+            lines.append(f"     • {w.message}")
+            lines.append(f"       建议: {w.suggestion}")
+
+    if infos:
+        lines.append("  ℹ️  信息:")
+        for w in infos:
+            lines.append(f"     • {w.message}")
+
+    return lines

@@ -146,6 +146,7 @@ class VllmCudaEngine(BaseEngine):
                 from worker.utils.vram_optimizer import (
                     estimate_vram_requirements,
                     optimize_vram_config,
+                    format_vram_report,
                 )
 
                 estimate = estimate_vram_requirements(
@@ -157,18 +158,40 @@ class VllmCudaEngine(BaseEngine):
                     tensor_parallel_size=self.tensor_parallel_size,
                 )
 
-                LOGGER.info("VRAM 估算: %s", estimate.recommendation)
+                # 显示详细的 VRAM 估算报告
+                LOGGER.info("\n%s", format_vram_report(estimate, verbose=True))
 
                 if not estimate.is_safe:
                     # 尝试优化配置
-                    optimized = optimize_vram_config(estimate)
+                    current_config = {
+                        "gpu_memory_utilization": self.gpu_memory_utilization,
+                        "max_model_len": self.max_model_len or 2048,
+                    }
+                    optimized = optimize_vram_config(estimate, current_config)
+
+                    # 应用优化后的配置
                     if "gpu_memory_utilization" in optimized:
                         old_util = self.gpu_memory_utilization
                         self.gpu_memory_utilization = optimized["gpu_memory_utilization"]
                         LOGGER.warning(
-                            "自动调整 gpu_memory_utilization: %.2f -> %.2f",
+                            "⚙️  自动调整 gpu_memory_utilization: %.2f -> %.2f",
                             old_util, self.gpu_memory_utilization
                         )
+
+                    if "max_model_len" in optimized and self.max_model_len != optimized["max_model_len"]:
+                        old_len = self.max_model_len or 2048
+                        self.max_model_len = optimized["max_model_len"]
+                        LOGGER.warning(
+                            "⚙️  自动调整 max_model_len: %d -> %d",
+                            old_len, self.max_model_len
+                        )
+
+                    # 显示优化建议
+                    if estimate.suggestions:
+                        LOGGER.warning("💡 其他建议:")
+                        for suggestion in estimate.suggestions:
+                            LOGGER.warning("   - %s", suggestion)
+
             except ImportError:
                 LOGGER.warning("vram_optimizer 未找到，跳过 VRAM 检查")
         
@@ -192,13 +215,7 @@ class VllmCudaEngine(BaseEngine):
         
         if max_model_len:
             llm_kwargs["max_model_len"] = max_model_len
-            
-        if self.quantization:
-            llm_kwargs["quantization"] = self.quantization
-            # 如果使用 bitsandbytes，告诉 vLLM 使用 bitsandbytes 加载格式
-            if str(self.quantization).lower() == 'bitsandbytes':
-                llm_kwargs["load_format"] = "bitsandbytes"
-            
+
         if self.enable_lora:
             llm_kwargs["enable_lora"] = True
             llm_kwargs["max_loras"] = self.max_loras
@@ -213,14 +230,10 @@ class VllmCudaEngine(BaseEngine):
             llm_kwargs["kv_cache_dtype"] = kv_cache_dtype
             LOGGER.info("KV Cache 数据类型: %s", kv_cache_dtype)
             
-        # 合并额外参数
-        llm_kwargs.update(self.extra_kwargs)
-        llm_kwargs.update(kwargs)
-
-        # 量化验证：vLLM 只支持 AWQ/GPTQ/FP8
+        # 量化配置（vLLM 支持 AWQ/GPTQ/FP8）
         if self.quantization:
             valid_vllm_quant = ["awq", "gptq", "fp8", "fp8_e5m2"]
-            if self.quantization in valid_vllm_quant:
+            if self.quantization.lower() in valid_vllm_quant:
                 llm_kwargs["quantization"] = self.quantization
                 LOGGER.info("使用量化方法: %s", self.quantization)
             else:
@@ -230,18 +243,94 @@ class VllmCudaEngine(BaseEngine):
                     f"如需使用 bitsandbytes，请切换到 nvidia 引擎。"
                 )
 
+        # 合并额外参数
+        llm_kwargs.update(self.extra_kwargs)
+        llm_kwargs.update(kwargs)
+
+        # === OOM 自动重试机制 ===
+        # 生成渐进式降级配置
+        base_config = {
+            "gpu_memory_utilization": gpu_memory_utilization,
+            "max_model_len": max_model_len,
+        }
+
         try:
-            self._llm = _LLM(**llm_kwargs)
-            self._model_path = model_path
-            LOGGER.info("模型加载成功: %s", model_path)
-            
-            # 如果提供了 LoRA 适配器，加载它
-            if adapter_path:
-                self.load_lora(adapter_path, "default")
-                
-        except Exception as e:
-            LOGGER.error("模型加载失败: %s", e)
-            raise
+            from worker.utils.vram_optimizer import progressive_retry_configs
+            retry_configs = progressive_retry_configs(base_config)
+        except ImportError:
+            # 如果 vram_optimizer 不可用，只使用原始配置
+            retry_configs = [base_config]
+
+        last_error = None
+        for attempt, config in enumerate(retry_configs, start=1):
+            try:
+                # 应用当前配置到 llm_kwargs
+                current_kwargs = llm_kwargs.copy()
+                current_kwargs["gpu_memory_utilization"] = config.get(
+                    "gpu_memory_utilization", gpu_memory_utilization
+                )
+                if "max_model_len" in config and config["max_model_len"]:
+                    current_kwargs["max_model_len"] = config["max_model_len"]
+
+                if attempt > 1:
+                    LOGGER.warning(
+                        "🔄 OOM 重试 [%d/%d]: gpu_mem_util=%.2f, max_model_len=%s",
+                        attempt,
+                        len(retry_configs),
+                        current_kwargs["gpu_memory_utilization"],
+                        current_kwargs.get("max_model_len", "auto"),
+                    )
+
+                # 尝试加载模型
+                self._llm = _LLM(**current_kwargs)
+                self._model_path = model_path
+
+                if attempt > 1:
+                    LOGGER.info("✅ 模型加载成功（第 %d 次尝试）: %s", attempt, model_path)
+                else:
+                    LOGGER.info("模型加载成功: %s", model_path)
+
+                # 如果提供了 LoRA 适配器，加载它
+                if adapter_path:
+                    self.load_lora(adapter_path, "default")
+
+                # 成功加载，退出重试循环
+                break
+
+            except Exception as e:
+                last_error = e
+                error_msg = str(e).lower()
+
+                # 检查是否是 OOM 错误
+                is_oom = (
+                    "out of memory" in error_msg
+                    or "cuda error" in error_msg
+                    or "cuda out of memory" in error_msg
+                    or "allocate" in error_msg
+                )
+
+                if is_oom and attempt < len(retry_configs):
+                    LOGGER.warning("⚠️  显存不足 (OOM)，准备使用更保守的配置重试...")
+                    # 清理显存
+                    try:
+                        import torch
+                        torch.cuda.empty_cache()
+                        gc.collect()
+                    except Exception:
+                        pass
+                    # 继续下一次重试
+                    continue
+                else:
+                    # 非 OOM 错误，或已用尽所有重试配置
+                    if attempt == len(retry_configs):
+                        LOGGER.error(
+                            "❌ 所有 %d 个配置均失败，无法加载模型: %s",
+                            len(retry_configs),
+                            last_error,
+                        )
+                    else:
+                        LOGGER.error("模型加载失败: %s", e)
+                    raise
 
     def load_lora(self, adapter_path: str, lora_name: str = "default") -> None:
         """
