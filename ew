@@ -170,8 +170,8 @@ cmd_setup() {
     echo ""
     success "✨ 环境初始化完成！"
     echo ""
-    echo -e "下一步: ${CYAN}./cy-llm start${NC} 启动服务 (兼容 ./ew)"
-    echo -e "        ${CYAN}./cy-llm worker${NC} 仅启动 Worker (兼容 ./ew)"
+    echo -e "下一步: ${CYAN}./cy-llm start${NC} 启动服务"
+    echo -e "        ${CYAN}./cy-llm worker${NC} 仅启动 Worker"
 }
 
 # =============================================================================
@@ -518,7 +518,7 @@ cmd_models() {
 # 命令: doctor - 环境诊断
 # =============================================================================
 cmd_doctor() {
-    local env_name="${CY_LLM_CONDA_ENV:-${EW_CONDA_ENV:-$DEFAULT_ENV_NAME}}"
+    local env_name="${CY_LLM_CONDA_ENV:-$DEFAULT_ENV_NAME}"
 
     step "🔍 环境诊断"
 
@@ -577,7 +577,7 @@ PY
 cmd_convert_trt() {
     local model=""
     local output=""
-    local env_name="${CY_LLM_CONDA_ENV:-${EW_CONDA_ENV:-$DEFAULT_ENV_NAME}}"
+    local env_name="${CY_LLM_CONDA_ENV:-$DEFAULT_ENV_NAME}"
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -629,7 +629,7 @@ CY-LLM Engine - 统一部署命令行工具
 <<<<<<< HEAD
     --env NAME        Conda 环境名称 (默认: cy_llm_worker)
 =======
-  --env NAME        Conda 环境名称 (默认: ew-ai-worker)
+    --env NAME        Conda 环境名称 (默认: cy_llm_worker)
 >>>>>>> AI-backend
   --engine TYPE     推理引擎类型:
                       cuda-vllm      - NVIDIA GPU + vLLM (推荐)
