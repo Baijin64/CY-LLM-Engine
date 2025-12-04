@@ -4,14 +4,9 @@
 #export HF_ENDPOINT="https://hf-mirror.com"
 # =============================================================================
 # CY-LLM Engine - 统一部署命令行工具
-# 用法: ./ew <command> [options]
+# 用法: ./cy [command] [options] (兼容: ./cy-llm, 遗留: ./ew)
 # =============================================================================
 set -e
-
-if [[ "$(basename \"$0\")" == "ew" ]]; then
-    echo "⚠️  Warning: 'ew' is deprecated. Please use './cy' or './cy-llm' instead." >&2
-    echo "To migrate, replace your aliases and scripts to point to './cy' or './cy-llm'. 'ew' will remain as a legacy shim for now." >&2
-fi
 
 # 颜色输出
 RED='\033[0;31m'
@@ -28,12 +23,12 @@ GATEWAY_DIR="$BACKEND_DIR/gateway"
 WORKER_DIR="$BACKEND_DIR/worker"
 DEPLOY_DIR="$BACKEND_DIR/deploy"
 
-# 默认配置（优先使用 CY_LLM_*，向后兼容 EW_*）
-DEFAULT_ENV_NAME="${CY_LLM_CONDA_ENV:-${EW_CONDA_ENV:-cy_llm_worker}}"
-DEFAULT_PYTHON_VERSION="${CY_LLM_PYTHON_VERSION:-${EW_PYTHON_VERSION:-3.10}}"
-DEFAULT_PORT="${CY_LLM_PORT:-${EW_PORT:-8080}}"
-DEFAULT_WORKER_PORT="${CY_LLM_WORKER_PORT:-${EW_WORKER_PORT:-50051}}"
-DEFAULT_ENGINE="${CY_LLM_ENGINE:-${EW_ENGINE:-cuda-vllm}}"
+# 默认配置
+DEFAULT_ENV_NAME="${CY_LLM_CONDA_ENV:-cy_llm_worker}"
+DEFAULT_PYTHON_VERSION="${CY_LLM_PYTHON_VERSION:-3.10}"
+DEFAULT_PORT="${CY_LLM_PORT:-8080}"
+DEFAULT_WORKER_PORT="${CY_LLM_WORKER_PORT:-50051}"
+DEFAULT_ENGINE="${CY_LLM_ENGINE:-cuda-vllm}"
 
 # 引擎到依赖文件的映射
 declare -A ENGINE_REQUIREMENTS=(
@@ -206,13 +201,13 @@ cmd_start() {
     
     local python_path=$(get_python_path "$env_name")
     if [[ -z "$python_path" ]]; then
-        error "环境 '$env_name' 未找到，请先运行: ./cy setup 或 ./ew setup (兼容)"
+        error "环境 '$env_name' 未找到，请先运行: ./cy setup"
         exit 1
     fi
     
     local jar_path="$GATEWAY_DIR/build/libs/gateway-0.0.1-SNAPSHOT.jar"
     if [[ ! -f "$jar_path" ]]; then
-        error "Gateway JAR 未找到，请先运行: ./cy setup 或 ./ew setup (兼容)"
+        error "Gateway JAR 未找到，请先运行: ./cy setup"
         exit 1
     fi
     
@@ -229,8 +224,8 @@ cmd_start() {
     export VLLM_GPU_MEM=${VLLM_GPU_MEM:-0.8}
     export VLLM_GPU_MEMORY_UTILIZATION=${VLLM_GPU_MEMORY_UTILIZATION:-$VLLM_GPU_MEM}
 
-    # Prefer CY_LLM model registry path, fallback to EW_MODEL_REGISTRY_PATH for compatibility
-    export CY_LLM_MODEL_REGISTRY_PATH="${CY_LLM_MODEL_REGISTRY_PATH:-${EW_MODEL_REGISTRY_PATH:-"$SCRIPT_DIR/CY_LLM_Backend/deploy/models.json"}}"
+    # CY_LLM model registry path
+    export CY_LLM_MODEL_REGISTRY_PATH="${CY_LLM_MODEL_REGISTRY_PATH:-\"$SCRIPT_DIR/CY_LLM_Backend/deploy/models.json\"}"
     
     if [[ "$daemon" == true ]]; then
         info "后台模式启动..."
@@ -594,8 +589,8 @@ cmd_convert_trt() {
     done
 
     if [[ -z "$model" || -z "$output" ]]; then
-        error "用法: ./cy convert-trt --model <model> --output <output> (兼容: ./ew convert-trt)"
-        error "示例: ./cy convert-trt --model Qwen/Qwen2.5-7B-Instruct --output /models/qwen2.5-7b-trt (兼容: ./ew)"
+        error "用法: ./cy convert-trt --model <model> --output <output>"
+        error "示例: ./cy convert-trt --model Qwen/Qwen2.5-7B-Instruct --output /models/qwen2.5-7b-trt"
         exit 1
     fi
 

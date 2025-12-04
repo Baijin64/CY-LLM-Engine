@@ -50,7 +50,7 @@ print(f"建议: {estimate.recommendation}")
 
 ```bash
 # 查看帮助
-./cy convert-trt --help  # or ./cy-llm convert-trt --help (legacy: `./ew`)
+./cy convert-trt --help  # or ./cy-llm convert-trt --help
 
 # 转换模型
 ./cy convert-trt \
@@ -121,7 +121,7 @@ PHASE2_3_UPGRADE_REPORT.md         # 升级详细报告
 ### 脚本
 
 ```
-cy / cy-llm                         # 主脚本（`ew` 为遗留兼容别名，已弃用）
+cy / cy-llm                         # 主脚本
 ```
 
 ## ⚡ 常见命令速查

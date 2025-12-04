@@ -36,7 +36,7 @@
 | `CY_LLM_Backend/worker/engines/vllm_cuda_engine.py` | +52 行 | 集成 VRAM 预检查 |
 | `CY_LLM_Backend/worker/core/server.py` | +58 行 | OOM 自动重试逻辑 |
 | `CY_LLM_Backend/worker/engines/trt_engine.py` | +25 行 | 改进流式输出 |
-| `cy` / `cy-llm` | +47 行 | 新增 convert-trt 命令 (`ew` 为兼容别名) |
+| `cy` / `cy-llm` | +47 行 | 新增 convert-trt 命令 |
 
 ---
 
@@ -224,9 +224,9 @@ trtllm-build \
 - ✅ ChatGLM 系列
 - ✅ Yi 模型
 
-#### 集成到 ew 脚本 ✅
+#### 集成到 cy-llm 脚本 ✅
 
-**文件**: `cy` / `cy-llm` 脚本 (`ew` 作为兼容别名仍存在)
+**文件**: `cy` / `cy-llm` 脚本
 
 **新增命令**: `cmd_convert_trt()`
 

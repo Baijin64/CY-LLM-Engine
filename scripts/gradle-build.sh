@@ -6,15 +6,9 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# Prefer CY_LLM_Backend paths (refactor branch), fallback to EW_AI_Backend for older layout
+# CY_LLM_Backend paths (standard layout)
 COORDINATOR_DIR="$ROOT_DIR/CY_LLM_Backend/coordinator"
-if [ ! -d "$COORDINATOR_DIR" ]; then
-  COORDINATOR_DIR="$ROOT_DIR/EW_AI_Backend/coordinator"
-fi
 GATEWAY_DIR="$ROOT_DIR/CY_LLM_Backend/gateway"
-if [ ! -d "$GATEWAY_DIR" ]; then
-  GATEWAY_DIR="$ROOT_DIR/EW_AI_Backend/gateway"
-fi
 
 if [ -z "${JAVA_HOME:-}" ]; then
   if command -v java >/dev/null 2>&1; then
@@ -33,13 +27,7 @@ if [ -d "$COORDINATOR_DIR" ]; then
   if [ -x "./gradlew" ]; then
     ./gradlew clean build -x test || { echo "Coordinator build failed"; exit 1; }
   else
-    # try legacy EW_AI_Backend path
-    if [ -x "$ROOT_DIR/EW_AI_Backend/coordinator/gradlew" ]; then
-      echo "gradlew not found in $COORDINATOR_DIR, using legacy path EW_AI_Backend/coordinator/gradlew"
-      (cd "$ROOT_DIR/EW_AI_Backend/coordinator" && ./gradlew clean build -x test) || { echo "Coordinator build failed via legacy path"; exit 1; }
-    else
-      echo "No gradlew found in $COORDINATOR_DIR nor in EW_AI_Backend/coordinator. Skipping coordinator build.";
-    fi
+    echo "No gradlew found in $COORDINATOR_DIR. Skipping coordinator build.";
   fi
   popd > /dev/null
 else
@@ -52,13 +40,7 @@ if [ -d "$GATEWAY_DIR" ]; then
   if [ -x "./gradlew" ]; then
     ./gradlew clean build -x test || { echo "Gateway build failed"; exit 1; }
   else
-    # try legacy EW_AI_Backend path
-    if [ -x "$ROOT_DIR/EW_AI_Backend/gateway/gradlew" ]; then
-      echo "gradlew not found in $GATEWAY_DIR, using legacy path EW_AI_Backend/gateway/gradlew"
-      (cd "$ROOT_DIR/EW_AI_Backend/gateway" && ./gradlew clean build -x test) || { echo "Gateway build failed via legacy path"; exit 1; }
-    else
-      echo "No gradlew found in $GATEWAY_DIR nor in EW_AI_Backend/gateway. Skipping gateway build.";
-    fi
+    echo "No gradlew found in $GATEWAY_DIR. Skipping gateway build.";
   fi
   popd > /dev/null
 else
