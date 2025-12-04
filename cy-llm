@@ -433,7 +433,7 @@ from worker.utils.diagnostic import (
     check_version_compatibility,
     format_compatibility_warnings,
 )
-from worker.utils.vram_optimizer import suggest_batch_optimization, get_vram_stats
+from worker.utils.vram_optimizer import suggest_batch_optimization, suggest_kv_cache_strategy, get_vram_stats
 
 config = load_worker_config(registry_path=os.environ.get("CY_LLM_MODEL_REGISTRY_PATH"))
 model_id = os.environ["CY_LLM_MODEL"]
@@ -466,9 +466,24 @@ compat_warnings = check_version_compatibility()
 for line in format_compatibility_warnings(compat_warnings):
     print(line)
 
+# KV Cache 策略建议
+print("\nKV Cache 预分配策略:")
+free_gb, total_gb = get_vram_stats()
+kv_suggestions = suggest_kv_cache_strategy(
+    kv_cache_gb=report.kv_cache_gb,
+    available_vram_gb=free_gb,
+    max_model_len=spec.max_model_len or 8192,
+    current_gpu_util=spec.gpu_memory_utilization or 0.75,
+    expected_qps=None  # 可以从环境变量读取
+)
+if kv_suggestions:
+    for suggestion in kv_suggestions:
+        print(f"  {suggestion}")
+else:
+    print("  （当前配置合理）")
+
 # 批处理优化建议
 print("\n批处理优化建议:")
-free_gb, total_gb = get_vram_stats()
 engine_value = getattr(spec.engine, "value", spec.engine)
 engine_type = (engine_value or "cuda-vllm").lower()
 batch_suggestions = suggest_batch_optimization(
@@ -523,9 +538,9 @@ cmd_test() {
 cmd_models() {
     local env_name="$DEFAULT_ENV_NAME"
     local action="${1:-list}"
-    
+
     local conda_cmd=$(get_conda)
-    
+
     case "$action" in
         list|ls)
             step "📦 可用模型"
@@ -534,6 +549,108 @@ cmd_models() {
         *)
             error "未知操作: $action"
             echo "可用操作: list"
+            exit 1
+            ;;
+    esac
+}
+
+# =============================================================================
+# 命令: config - 配置管理
+# =============================================================================
+cmd_config() {
+    local action="${1:-validate}"
+    local config_file="${2:-$BACKEND_DIR/deploy/config.json}"
+
+    case "$action" in
+        validate)
+            step "🔍 验证配置文件: $config_file"
+
+            if [[ ! -f "$config_file" ]]; then
+                error "配置文件不存在: $config_file"
+                exit 1
+            fi
+
+            PYTHONPATH="$BACKEND_DIR" python - <<PY
+import json
+import sys
+from pathlib import Path
+
+config_path = Path("$config_file")
+
+# 检查 JSON 语法
+try:
+    with open(config_path) as f:
+        config = json.load(f)
+    print("✅ JSON 语法正确")
+except json.JSONDecodeError as e:
+    print(f"❌ JSON 语法错误: {e}")
+    sys.exit(1)
+
+# 检查必填字段
+if "models" not in config:
+    print("❌ 缺少 'models' 字段")
+    sys.exit(1)
+
+print(f"✅ 找到 {len(config['models'])} 个模型配置")
+
+# 验证每个模型配置
+errors = []
+warnings = []
+valid_engines = ["cuda-vllm", "cuda-vllm-async", "cuda-trt", "nvidia", "ascend-vllm", "ascend-mindie", "ascend"]
+valid_quantization = ["awq", "gptq", "bitsandbytes", "fp8", "fp8_e5m2", None]
+
+for model_name, model_config in config["models"].items():
+    # 检查必填字段
+    if "engine" not in model_config:
+        errors.append(f"模型 '{model_name}': 缺少 'engine' 字段")
+        continue
+    if "model_path" not in model_config:
+        errors.append(f"模型 '{model_name}': 缺少 'model_path' 字段")
+        continue
+
+    # 验证引擎类型
+    engine = model_config["engine"]
+    if engine not in valid_engines:
+        warnings.append(f"模型 '{model_name}': 未知引擎类型 '{engine}'（支持: {', '.join(valid_engines)}）")
+
+    # 验证量化方法
+    quantization = model_config.get("quantization")
+    if quantization and quantization not in valid_quantization:
+        warnings.append(f"模型 '{model_name}': 未知量化方法 '{quantization}'（支持: awq, gptq, bitsandbytes, fp8）")
+
+    # vLLM + bitsandbytes 冲突检查
+    if "vllm" in engine and quantization == "bitsandbytes":
+        errors.append(f"模型 '{model_name}': vLLM 引擎不支持 bitsandbytes 量化，请使用 AWQ/GPTQ 或切换到 nvidia 引擎")
+
+    # 检查 gpu_memory_utilization
+    gpu_util = model_config.get("gpu_memory_utilization")
+    if gpu_util and gpu_util > 0.90:
+        warnings.append(f"模型 '{model_name}': gpu_memory_utilization={gpu_util:.2f} 过高，可能导致 OOM（推荐 0.70-0.85）")
+
+    print(f"  ✓ {model_name}: {engine} ({model_config['model_path']})")
+
+# 输出结果
+print()
+if errors:
+    print("❌ 发现配置错误:")
+    for err in errors:
+        print(f"  • {err}")
+    sys.exit(1)
+
+if warnings:
+    print("⚠️  配置警告:")
+    for warn in warnings:
+        print(f"  • {warn}")
+
+if not errors and not warnings:
+    print("✅ 配置文件验证通过，无问题")
+else:
+    print("\n💡 建议修复警告以获得最佳性能")
+PY
+            ;;
+        *)
+            error "未知操作: $action"
+            echo "可用操作: validate"
             exit 1
             ;;
     esac
@@ -642,13 +759,14 @@ CY-LLM Engine - 统一部署命令行工具
   worker      仅启动 Worker
   stop        停止所有服务
   status      查看服务状态
-  doctor      环境诊断 (检查依赖、GPU、配置)
+  diagnose    环境与模型诊断 (VRAM、依赖、兼容性)
+  doctor      环境诊断 (简化版)
+  config      配置文件管理 (validate 验证配置)
   convert-trt 转换模型为 TensorRT-LLM 引擎
   docker      Docker Compose 部署
   test        运行测试
   models      模型管理
   help        显示帮助信息
-    diagnose    环境与模型诊断
 
 常用选项:
     --env NAME        Conda 环境名称 (默认: cy_llm_worker)
@@ -670,8 +788,11 @@ CY-LLM Engine - 统一部署命令行工具
   # 初始化 TRT 环境
   ./cy-llm setup --engine cuda-trt
 
-  # 诊断环境
-  ./cy-llm doctor
+  # 诊断环境与模型
+  ./cy-llm diagnose deepseek-v3
+
+  # 验证配置文件
+  ./cy-llm config validate
 
   # 转换模型为 TRT 引擎
   ./cy-llm convert-trt --model Qwen/Qwen2.5-7B-Instruct --output /models/qwen2.5-7b-trt
@@ -712,11 +833,12 @@ main() {
         docker)     cmd_docker "$@" ;;
         stop)       cmd_stop "$@" ;;
         status)     cmd_status "$@" ;;
+        diagnose)   cmd_diagnose "$@" ;;
         doctor)     cmd_doctor "$@" ;;
+        config)     cmd_config "$@" ;;
         convert-trt) cmd_convert_trt "$@" ;;
         test)       cmd_test "$@" ;;
         models)     cmd_models "$@" ;;
-        diagnose)   cmd_diagnose "$@" ;;
         help|--help|-h) cmd_help ;;
         *)
             error "未知命令: $command"

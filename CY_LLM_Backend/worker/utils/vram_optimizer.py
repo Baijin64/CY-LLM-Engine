@@ -325,6 +325,83 @@ def progressive_retry_configs(base_config: Dict) -> List[Dict]:
     return configs
 
 
+def suggest_kv_cache_strategy(
+    kv_cache_gb: float,
+    available_vram_gb: float,
+    max_model_len: int,
+    current_gpu_util: float,
+    expected_qps: Optional[int] = None
+) -> List[str]:
+    """KV Cache 预分配策略建议
+
+    Args:
+        kv_cache_gb: 当前 KV Cache 预估占用
+        available_vram_gb: 可用显存
+        max_model_len: 最大序列长度
+        current_gpu_util: 当前 gpu_memory_utilization 设置
+        expected_qps: 预期 QPS（可选）
+
+    Returns:
+        KV Cache 优化建议列表
+    """
+    suggestions = []
+    kv_ratio = kv_cache_gb / max(available_vram_gb, 0.1)
+
+    # 基于并发场景的建议
+    if expected_qps is not None:
+        if expected_qps <= 10:
+            # 低并发：可以降低 gpu_memory_utilization
+            if current_gpu_util > 0.70:
+                suggestions.append(
+                    f"🎯 低并发场景 (QPS≤10)：建议降低 gpu_memory_utilization 至 0.70 "
+                    f"（当前 {current_gpu_util:.2f}）以节省显存"
+                )
+        elif expected_qps <= 50:
+            # 中并发：推荐 0.75
+            if current_gpu_util < 0.70 or current_gpu_util > 0.80:
+                suggestions.append(
+                    f"🎯 中并发场景 (QPS 10-50)：建议设置 gpu_memory_utilization=0.75 "
+                    f"（当前 {current_gpu_util:.2f}）"
+                )
+        else:
+            # 高并发：推荐 0.85
+            if current_gpu_util < 0.80:
+                suggestions.append(
+                    f"🎯 高并发场景 (QPS>50)：建议提升 gpu_memory_utilization 至 0.85 "
+                    f"（当前 {current_gpu_util:.2f}）以支持更多并发请求"
+                )
+
+    # 基于序列长度的建议
+    if max_model_len <= 2048:
+        suggestions.append(
+            f"✅ max_model_len={max_model_len} 较小，KV Cache 占用低，适合高并发"
+        )
+    elif max_model_len <= 8192:
+        suggestions.append(
+            f"⚡ max_model_len={max_model_len}：平衡配置，"
+            f"KV Cache 占用 {kv_cache_gb:.1f}GB ({kv_ratio*100:.0f}% 显存)"
+        )
+    else:
+        suggestions.append(
+            f"⚠️  max_model_len={max_model_len} 较大，"
+            f"KV Cache 占用 {kv_cache_gb:.1f}GB ({kv_ratio*100:.0f}% 显存)，"
+            "高并发时需要监控显存使用率"
+        )
+        if kv_ratio > 0.5:
+            suggestions.append(
+                "💡 考虑降低 max_model_len 或启用 Prefix Caching 以优化长序列场景"
+            )
+
+    # KV Cache dtype 优化建议
+    if kv_cache_gb > 5.0:
+        suggestions.append(
+            f"💡 KV Cache 占用 {kv_cache_gb:.1f}GB 较大，"
+            "可考虑设置 kv_cache_dtype='fp8' 以节省 50% KV Cache 显存（略微损失精度）"
+        )
+
+    return suggestions
+
+
 def suggest_batch_optimization(
     engine_type: str,
     kv_cache_gb: float,

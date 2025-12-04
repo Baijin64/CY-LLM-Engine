@@ -281,8 +281,20 @@ class VllmCudaEngine(BaseEngine):
                         current_kwargs.get("max_model_len", "auto"),
                     )
 
+                # 加载进度反馈
+                LOGGER.info("⏳ 开始加载模型（这可能需要几分钟，请耐心等待）...")
+                LOGGER.info("📥 步骤 1/3: 初始化 vLLM 引擎配置")
+
+                import time
+                start_time = time.time()
+
                 # 尝试加载模型
+                LOGGER.info("📦 步骤 2/3: 加载模型权重到 GPU 显存")
                 self._llm = _LLM(**current_kwargs)
+
+                LOGGER.info("🔧 步骤 3/3: 初始化 KV Cache 和推理引擎")
+                elapsed = time.time() - start_time
+                LOGGER.info(f"✅ 模型加载完成，耗时 {elapsed:.1f} 秒")
                 self._model_path = model_path
 
                 if attempt > 1:
