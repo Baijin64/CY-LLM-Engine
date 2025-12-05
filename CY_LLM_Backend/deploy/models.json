@@ -1,11 +1,19 @@
 {
-  "default": {
+  "default1": {
     "model_path": "deepseek-ai/deepseek-llm-7b-chat",
     "adapter_path": "../../CY_LLM_Training/checkpoints/furina_lora_v2",
     "engine": null,
     "gpu_memory_utilization": 0.85,
     "max_model_len": 512,
     "quantization": "bitsandbytes"
+  },
+  "default": {
+    "model_path": "facebook/opt-2.7b",
+    "engine": null,
+    "gpu_memory_utilization": 0.85,
+    "max_model_len": 2048,
+    "quantization": "bitsandbytes",
+    "use_4bit": true
   },
   "furina": {
     "model_path": "deepseek-ai/deepseek-llm-7b-chat",
