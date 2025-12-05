@@ -1,11 +1,4 @@
---extra-index-url https://download.pytorch.org/whl/cu118
-# PyTorch + CUDA 11.8 (matches `dl` env)
-torch==2.3.1+cu118
-torchvision==0.18.1+cu118
-torchaudio==2.3.1+cu118
-
 # Core ML / infra packages pinned to the versions observed in `dl` env
-numpy==2.1.2
 transformers==4.57.1
 datasets==4.4.1
 safetensors==0.6.2

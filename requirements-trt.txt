@@ -5,20 +5,27 @@
 
 # PyTorch (TRT-LLM 兼容 torch 2.1-2.3, CUDA 12.0)
 --extra-index-url https://download.pytorch.org/whl/cu121
-torch>=2.1.0,<2.4.0
-torchvision>=0.16.0,<0.19.0
+torch==2.4.0
+torchvision==0.19.0
+packaging==25.0
+grpcio==1.76.0
+# PEFT compatible with Transformers 4.42.x and our TRL pin
+peft==0.11.1
+transformers==4.42.4
+trl==0.9.6
+accelerate==0.32.0
+bitsandbytes==0.48.2
+# CUDA python bindings used in the `trt` env
+cuda-python==12.2.0
 
 # TensorRT-LLM
-# 注意: 需从 NVIDIA 官方手动安装
-#
-# 安装方法：
-#   方法 1 (pip):
-#     pip install tensorrt_llm -U --pre --extra-index-url https://pypi.nvidia.com
-#
-#   方法 2 (NGC 容器):
-#     docker pull nvcr.io/nvidia/tensorrt-llm:latest
-#
-#   方法 3 (源码编译):
-#     https://github.com/NVIDIA/TensorRT-LLM
-#
-# tensorrt_llm>=0.11.0
+# 注意: TensorRT / TensorRT-LLM 需根据你本地 GPU / CUDA 环境从 NVIDIA 获得并手动安装。
+# 可选安装方式：
+#  1) pip 安装预发布包：
+#       pip install tensorrt_llm -U --pre --extra-index-url https://pypi.nvidia.com
+#  2) 使用 NGC 容器：
+#       docker pull nvcr.io/nvidia/tensorrt-llm:latest
+#  3) 从源码或官方发行包安装，具体见：https://github.com/NVIDIA/TensorRT-LLM
+
+# 注：上述版本项依据本地 `trt` 环境（torch 2.4.0, transformers 4.42.4, bitsandbytes 0.48.2,
+# accelerate 0.32.0, peft 0.11.1）调整以保证运行时兼容性。

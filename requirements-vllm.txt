@@ -3,8 +3,11 @@
 
 -r requirements-base.txt
 
-# PyTorch (vLLM 需要 torch>=2.4.0, CUDA 12.1+)
---extra-index-url https://download.pytorch.org/whl/cu121
+# Core
+numpy==2.2.6
+
+# PyTorch (vLLM 环境中使用的 CUDA/torch 组合)
+--extra-index-url https://download.pytorch.org/whl/cu124
 torch==2.9.0
 torchvision==0.24.0
 torchaudio==2.9.0
@@ -12,8 +15,10 @@ torchaudio==2.9.0
 # vLLM
 vllm==0.12.0
 
-# Optional: Flash Attention (Linux only)
-# flash-attn>=2.5.0; platform_system == "Linux"
-
-# Performance
+# Performance / runtime
 triton==3.5.0
+accelerate==0.33.0
+bitsandbytes==0.48.2
+
+# 注：上述版本基于用于 vLLM / research workflows的已安装包清单。
+# 若你需要更严格的隔离或安装方式，建议在独立 Conda 环境中按此文件安装。

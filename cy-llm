@@ -24,11 +24,11 @@ WORKER_DIR="$BACKEND_DIR/worker"
 DEPLOY_DIR="$BACKEND_DIR/deploy"
 
 # 默认配置
-DEFAULT_ENV_NAME="${CY_LLM_CONDA_ENV:-ds_env}"
+DEFAULT_ENV_NAME="${CY_LLM_CONDA_ENV:-trt}"
 DEFAULT_PYTHON_VERSION="${CY_LLM_PYTHON_VERSION:-3.10}"
 DEFAULT_PORT="${CY_LLM_PORT:-8080}"
 DEFAULT_WORKER_PORT="${CY_LLM_WORKER_PORT:-50051}"
-DEFAULT_ENGINE="${CY_LLM_ENGINE:-cuda-vllm}"
+DEFAULT_ENGINE="${CY_LLM_ENGINE:-cuda-trt}"
 
 # 引擎到依赖文件的映射
 declare -A ENGINE_REQUIREMENTS=(
@@ -128,7 +128,39 @@ cmd_setup() {
         step "2/3 安装依赖: $req_file"
         if [[ -f "$SCRIPT_DIR/$req_file" ]]; then
             info "安装 Python 依赖..."
-            $conda_cmd run -n "$env_name" pip install -r "$SCRIPT_DIR/$req_file" -q
+
+            # 按行安装 requirements，以便输出每个包的安装状态。
+            # 空行、注释行和以 - 开头的 pip 选项将被跳过（保留给整体安装回退）。
+            install_failed=false
+            while IFS= read -r req_line || [[ -n "$req_line" ]]; do
+                # 去掉首尾空白
+                line_trimmed=$(echo "$req_line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+                # 跳过空行和注释
+                if [[ -z "$line_trimmed" || "$line_trimmed" =~ ^# ]]; then
+                    continue
+                fi
+                # 如果是 pip 选项（例如 --extra-index-url 或 -f），跳过逐行安装
+                if [[ "$line_trimmed" =~ ^- ]]; then
+                    continue
+                fi
+
+                # 显示安装开始信息（尽量提取包名==版本或显示整行）
+                echo -e "${YELLOW}正在安装 ${line_trimmed}${NC}"
+
+                if ! $conda_cmd run -n "$env_name" pip install --no-cache-dir "$line_trimmed" -q; then
+                    warn "安装 ${line_trimmed} 失败，回退使用整体 requirements 安装以获得完整错误信息"
+                    install_failed=true
+                    break
+                fi
+
+                echo -e "${GREEN}安装完成: ${line_trimmed}${NC}"
+            done < "$SCRIPT_DIR/$req_file"
+
+            if $install_failed; then
+                # 回退到一次性安装以显示 pip 的完整错误输出
+                $conda_cmd run -n "$env_name" pip install -r "$SCRIPT_DIR/$req_file"
+            fi
+
             success "依赖安装完成"
         else
             warn "依赖文件不存在: $req_file"
