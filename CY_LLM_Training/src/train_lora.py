@@ -31,7 +31,7 @@ def train(args):
     model = AutoModelForCausalLM.from_pretrained(
         args.model_name,
         quantization_config=bnb_config,
-        device_map="auto",
+        device_map={"": 0},
         trust_remote_code=True, # DeepSeek 可能需要
         # attn_implementation="flash_attention_2" # 可以不用 flash_attn 库，自动使用 PyTorch 内置加速
     )

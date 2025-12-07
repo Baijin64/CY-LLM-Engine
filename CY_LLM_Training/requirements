@@ -1,0 +1,11 @@
+accelerate==0.34.2 
+bitsandbytes==0.43.3
+datasets==4.4.1
+numpy==2.2.6
+pygments==2.19.2
+safetensors==0.7.0
+sentencepiece==0.2.1
+torch==2.3.0+cu121
+transformers==4.45.2
+triton==2.3.0
+trl==0.8.6

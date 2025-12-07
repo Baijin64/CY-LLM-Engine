@@ -43,6 +43,7 @@ data/
 dataset/
 datasets/
 *.lmdb
+dialouge_gi/
 
 # Cache
 .cache/

@@ -26,15 +26,15 @@ from .engine import (
 )
 
 # 数据模块
-from .data import (
-    DatasetLoader,
-    DatasetConfig,
-    PromptFormatter,
-    InstructionFormatter,
-    ChatMLFormatter,
-    FormatterConfig,
-    get_formatter,
-)
+# from .data import (
+#     DatasetLoader,
+#     DatasetConfig,
+#     PromptFormatter,
+#     InstructionFormatter,
+#     ChatMLFormatter,
+#     FormatterConfig,
+#     get_formatter,
+# )
 
 # 模型模块
 from .model import (

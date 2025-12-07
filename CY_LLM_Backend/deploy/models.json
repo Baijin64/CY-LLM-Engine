@@ -1,7 +1,7 @@
 {
   "default1": {
     "model_path": "deepseek-ai/deepseek-llm-7b-chat",
-    "adapter_path": "../../CY_LLM_Training/checkpoints/furina_lora_v2",
+    "adapter_path": "yourpath/CY_LLM_Training/checkpoints/furina_lora_v2",
     "engine": null,
     "gpu_memory_utilization": 0.85,
     "max_model_len": 512,
@@ -9,11 +9,11 @@
   },
   "default": {
     "model_path": "facebook/opt-2.7b",
-    "engine": null,
+    "adapter_path": "/home/user/ElementWarfare/CY-LLM-Engine/CY_LLM_Training/checkpoints/furina_lora_opt",
+    "engine": "nvidia",
     "gpu_memory_utilization": 0.85,
     "max_model_len": 2048,
-    "quantization": "bitsandbytes",
-    "use_4bit": true
+    "quantization": "bitsandbytes"
   },
   "furina": {
     "model_path": "deepseek-ai/deepseek-llm-7b-chat",
