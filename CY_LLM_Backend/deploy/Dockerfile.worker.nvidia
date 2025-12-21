@@ -2,7 +2,7 @@
 # [部署] NVIDIA GPU Worker 镜像
 # 用法: docker build -f deploy/Dockerfile.worker.nvidia -t cy-llm-worker-nvidia .
 
-FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
+FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
 
 LABEL maintainer="CY-LLM Team"
 LABEL description="CY-LLM Worker - PyTorch + NVIDIA CUDA Inference Engine"
@@ -32,7 +32,13 @@ WORKDIR /app
 
 # 复制依赖文件并安装（利用缓存层）
 COPY worker/requirements.txt ./requirements.txt
-RUN pip3 install --no-cache-dir -r requirements.txt
+
+# 安装 PyTorch CUDA (cu121) 版本，避免误装 CPU-only wheel
+# 说明：torch 的 CUDA wheels 来自 download.pytorch.org，不能依赖 PyPI 默认解析。
+RUN python3 -m pip install --no-cache-dir --upgrade pip \
+    && pip3 install --no-cache-dir --index-url https://download.pytorch.org/whl/cu121 torch==2.5.1 \
+    && grep -vE '^(torch|torchvision|torchaudio)\b' requirements.txt > requirements.no-torch.txt \
+    && pip3 install --no-cache-dir -r requirements.no-torch.txt
 
 # 复制 Proto 生成代码和源码
 COPY worker/ ./worker/
@@ -70,6 +76,10 @@ EXPOSE 50051
 ENV CY_LLM_BACKEND=nvidia
 ENV CY_LLM_MODEL_REGISTRY=/etc/worker/models.json
 ENV CY_LLM_INTERNAL_TOKEN=""
+
+# 安全默认值：生产环境强制内部 token；若仅本地开发需要放行，请显式设置 CY_LLM_ALLOW_INSECURE_INTERNAL_TOKEN=true
+ENV CY_LLM_ENV=production
+ENV CY_LLM_ALLOW_INSECURE_INTERNAL_TOKEN=false
 
 # 启动命令
 CMD ["python3", "-m", "worker.main", "--serve", "--port", "50051"]

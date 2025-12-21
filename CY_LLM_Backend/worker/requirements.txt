@@ -28,6 +28,16 @@ psutil
 protobuf
 sentencepiece==0.2.1
 
+# Model management / metadata
+PyYAML>=6.0
+tqdm>=4.67.0
+huggingface-hub>=0.20.0
+safetensors>=0.4.0
+
+# Optional model source
+# 当你需要使用 source="modelscope" 下载时再安装也可以
+modelscope>=1.10.0
+
 # Performance optimizations (optional)
 xxhash>=3.0.0         # 高性能哈希（缓存键）
 

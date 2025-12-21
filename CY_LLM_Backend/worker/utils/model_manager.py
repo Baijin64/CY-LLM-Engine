@@ -471,7 +471,7 @@ class ModelDownloader:
             from huggingface_hub import snapshot_download, HfApi
             from huggingface_hub.utils import tqdm as hf_tqdm
         except ImportError:
-            raise ImportError("请安装 huggingface_hub: pip install huggingface_hub")
+            raise ImportError("请安装 huggingface-hub: pip install huggingface-hub")
 
         # 获取模型文件列表和总大小
         api = HfApi()
@@ -486,37 +486,36 @@ class ModelDownloader:
             LOGGER.warning("无法获取模型大小: %s", e)
             total_size = 0
 
-        downloaded_size = 0
-        last_progress_time = time.time()
+        progress_tracker = self.progress_tracker
 
-        def progress_callback(progress: float):
-            nonlocal downloaded_size, last_progress_time
-            
-            current_time = time.time()
-            elapsed = current_time - last_progress_time
-            
-            if self.progress_tracker and elapsed > 0.5:  # 每 0.5 秒更新一次
-                speed = ""
-                eta = ""
-                
-                if total_size > 0:
-                    downloaded_size = int(total_size * progress / 100)
-                    if elapsed > 0:
-                        speed_bps = downloaded_size / (current_time - last_progress_time)
-                        speed = self._format_speed(speed_bps)
-                        
-                        remaining = total_size - downloaded_size
-                        if speed_bps > 0:
-                            eta_seconds = remaining / speed_bps
-                            eta = self._format_eta(eta_seconds)
+        class _TrackerTqdm(hf_tqdm):
+            def update(self, n=1):  # type: ignore[override]
+                out = super().update(n)
+                if not progress_tracker:
+                    return out
+                try:
+                    if self.total and self.total > 0:
+                        progress = (float(self.n) / float(self.total)) * 100.0
+                    else:
+                        progress = 0.0
 
-                self.progress_tracker.update(
-                    progress=progress,
-                    message=f"下载中: {progress:.1f}%",
-                    speed=speed,
-                    eta=eta
-                )
-                last_progress_time = current_time
+                    speed = ""
+                    eta = ""
+                    if getattr(self, "rate", None):
+                        speed = self._format_speed(float(self.rate))
+                    if getattr(self, "remaining", None) is not None:
+                        eta = self._format_eta(float(self.remaining))
+
+                    progress_tracker.update(
+                        progress=min(99.9, max(0.0, progress)),
+                        message=f"下载中: {progress:.1f}%",
+                        speed=speed,
+                        eta=eta,
+                    )
+                except Exception:
+                    # 进度更新失败不应影响下载主流程
+                    pass
+                return out
 
         # 执行下载
         local_dir = self.cache_dir / model_id.replace("/", "--")
@@ -527,6 +526,7 @@ class ModelDownloader:
             revision=revision,
             local_dir=str(local_dir),
             local_dir_use_symlinks=False,
+            tqdm_class=_TrackerTqdm,
         )
 
         if self.progress_tracker:
