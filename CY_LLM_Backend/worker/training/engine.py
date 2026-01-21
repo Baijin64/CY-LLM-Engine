@@ -12,10 +12,21 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Any, Dict, Generator, List, Optional
+from typing import Any, Dict, Generator, List, Optional, TYPE_CHECKING
 
-# from .data import DatasetConfig, DatasetLoader, InstructionFormatter, FormatterConfig
 from .model import ModelSetup, ModelConfig, DeviceConfig, QuantizationConfig, LoRASetup, LoRAConfig
+DatasetConfig: Any = Any
+DatasetLoader: Any = Any
+InstructionFormatter: Any = Any
+FormatterConfig: Any = Any
+
+if TYPE_CHECKING:
+    from .data import DatasetConfig as DatasetConfig
+    from .data import DatasetLoader as DatasetLoader
+    from .data import InstructionFormatter as InstructionFormatter
+    from .data import FormatterConfig as FormatterConfig
+
+DATA_MODULE_AVAILABLE = False
 from .loop import (
     TrainerFactory,
     TrainerConfig,
@@ -252,12 +263,14 @@ class TrainingEngine:
     def _load_dataset(self, job_id: str, request: TrainingRequest):
         """加载并准备数据集"""
         LOGGER.info("[%s] 加载数据集: %s", job_id, request.dataset_path)
-        dataset_config = DatasetConfig(
+        if not DATA_MODULE_AVAILABLE:
+            raise RuntimeError("Dataset loader module is not available")
+        dataset_config = DatasetConfig(  # type: ignore[call-arg,operator]
             path=request.dataset_path,
             settings_path=request.settings_path,
             settings_oversample=request.settings_oversample,
         )
-        dataset_loader = DatasetLoader(dataset_config)
+        dataset_loader = DatasetLoader(dataset_config)  # type: ignore[call-arg,operator]
         dataset = dataset_loader.load()
         LOGGER.info("[%s] 数据集加载完成: %d 条样本", job_id, len(dataset))
         return dataset
@@ -340,8 +353,10 @@ class TrainingEngine:
         )
         callbacks = [create_callback_wrapper(progress_callback)]
         
-        # 创建格式化器和 Trainer
-        formatter = InstructionFormatter(FormatterConfig())
+        # 创建格式化器和 Trainer（当前 formatter 模块未集成时使用默认 formatter）
+        formatter = None
+        if DATA_MODULE_AVAILABLE:
+            formatter = InstructionFormatter(FormatterConfig())  # type: ignore[call-arg,operator]
         trainer_factory = TrainerFactory(trainer_config)
         trainer = trainer_factory.create(
             model=model,

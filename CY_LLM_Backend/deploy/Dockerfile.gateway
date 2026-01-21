@@ -17,11 +17,11 @@ COPY proto ./proto
 
 # 下载依赖（可缓存）
 WORKDIR /build/gateway
-RUN ./gradlew dependencies --no-daemon || true
+RUN ./gradlew dependencies --no-daemon --build-cache || true
 
 # 复制源码并构建
 COPY gateway/src ./src
-RUN ./gradlew bootJar --no-daemon -x test
+RUN ./gradlew bootJar --no-daemon -x test --build-cache
 
 # ========== 运行阶段 ==========
 FROM eclipse-temurin:21-jre-alpine

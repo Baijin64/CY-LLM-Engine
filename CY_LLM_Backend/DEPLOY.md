@@ -37,6 +37,15 @@ vim .env  # 设置 API Key 等配置
 ./scripts/deploy.sh status
 ```
 
+### 4. 启用监控（Prometheus / AlertManager / Grafana）
+
+```bash
+cd deploy
+docker compose --profile observability up -d prometheus alertmanager grafana
+```
+
+Prometheus 默认端口 `9090`，Grafana 默认端口 `3000`。
+
 ## API 接口
 
 ### 推理接口

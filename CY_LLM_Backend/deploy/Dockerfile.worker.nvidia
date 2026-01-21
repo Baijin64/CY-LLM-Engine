@@ -38,7 +38,8 @@ COPY worker/requirements.txt ./requirements.txt
 RUN python3 -m pip install --no-cache-dir --upgrade pip \
     && pip3 install --no-cache-dir --index-url https://download.pytorch.org/whl/cu121 torch==2.5.1 \
     && grep -vE '^(torch|torchvision|torchaudio)\b' requirements.txt > requirements.no-torch.txt \
-    && pip3 install --no-cache-dir -r requirements.no-torch.txt
+    && pip3 install --no-cache-dir -r requirements.no-torch.txt \
+    && rm -f requirements.no-torch.txt
 
 # 复制 Proto 生成代码和源码
 COPY worker/ ./worker/
@@ -69,13 +70,14 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=600s --retries=5 \
         resp = stub.Health(WorkerHealthRequest()); \
         exit(0 if resp.healthy else 1)" || exit 1
 
-# 暴露 gRPC 端口
-EXPOSE 50051
+# 暴露 gRPC 端口 + metrics
+EXPOSE 50051 9090
 
 # 环境变量（可在运行时覆盖）
 ENV CY_LLM_BACKEND=nvidia
 ENV CY_LLM_MODEL_REGISTRY=/etc/worker/models.json
 ENV CY_LLM_INTERNAL_TOKEN=""
+ENV CY_LLM_HEALTH_PORT=9090
 
 # 安全默认值：生产环境强制内部 token；若仅本地开发需要放行，请显式设置 CY_LLM_ALLOW_INSECURE_INTERNAL_TOKEN=true
 ENV CY_LLM_ENV=production

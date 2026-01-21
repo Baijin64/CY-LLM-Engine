@@ -19,6 +19,8 @@ LOGGER = logging.getLogger("cy_llm.worker.auth")
 # 内部认证 Token（Gateway -> Worker）
 # 建议在生产环境中通过环境变量设置强随机值
 INTERNAL_TOKEN: str = os.getenv("CY_LLM_INTERNAL_TOKEN", "")
+ENV_ALLOW_INSECURE = "CY_LLM_ALLOW_INSECURE_INTERNAL_TOKEN"
+ENV_APP_ENV = "CY_LLM_ENV"
 
 # Token 验证相关常量
 AUTH_HEADER_PREFIX = "Bearer "
@@ -38,13 +40,15 @@ def verify_token(provided_token: Optional[str], expected_token: Optional[str] = 
     """
     expected = expected_token or INTERNAL_TOKEN
     
-    # 未配置 Token 时跳过验证（仅限开发环境）
+    # 未配置 Token 时允许开发环境放行
     if not expected:
-        LOGGER.warning(
-            "INTERNAL_TOKEN 未配置，跳过认证验证。"
-            "生产环境请务必设置 CY_LLM_INTERNAL_TOKEN 环境变量！"
-        )
-        return True, ""
+        if is_insecure_internal_token_allowed():
+            LOGGER.warning(
+                "INTERNAL_TOKEN 未配置，开发环境放行认证验证。"
+                "生产环境请务必设置 CY_LLM_INTERNAL_TOKEN 环境变量！"
+            )
+            return True, ""
+        return False, "Internal token required"
     
     # 无提供 Token
     if not provided_token:
@@ -91,10 +95,29 @@ def get_internal_token() -> str:
     global INTERNAL_TOKEN
     if INTERNAL_TOKEN:
         return INTERNAL_TOKEN
-    # 如果未配置则生成并缓存一个随机 token
-    token = uuid.uuid4().hex
-    INTERNAL_TOKEN = token
-    return token
+    if is_insecure_internal_token_allowed():
+        token = uuid.uuid4().hex
+        INTERNAL_TOKEN = token
+        return token
+    raise RuntimeError("CY_LLM_INTERNAL_TOKEN is required in production")
+
+
+def is_insecure_internal_token_allowed() -> bool:
+    env_value = os.getenv(ENV_APP_ENV, "development").lower().strip()
+    allow_flag = os.getenv(ENV_ALLOW_INSECURE, "false").lower().strip() in {"1", "true", "yes"}
+    return env_value != "production" or allow_flag
+
+
+def enforce_internal_token_policy() -> None:
+    if INTERNAL_TOKEN:
+        return
+    if is_insecure_internal_token_allowed():
+        LOGGER.warning(
+            "CY_LLM_INTERNAL_TOKEN 未配置，允许开发模式启动。"
+            "生产环境请设置 CY_LLM_INTERNAL_TOKEN 并禁用 CY_LLM_ALLOW_INSECURE_INTERNAL_TOKEN。"
+        )
+        return
+    raise RuntimeError("CY_LLM_INTERNAL_TOKEN is required in production")
 
 
 def verify_grpc_context(context) -> bool:
@@ -172,4 +195,6 @@ __all__ = [
     "verify_grpc_context_async",
     "extract_token_from_metadata",
     "get_internal_token",
+    "is_insecure_internal_token_allowed",
+    "enforce_internal_token_policy",
 ]
