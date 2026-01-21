@@ -68,13 +68,14 @@ RUN mkdir -p /models /checkpoints /etc/worker \
 
 USER ewai
 
-# 暴露 gRPC 端口
-EXPOSE 50051
+# 暴露 gRPC 端口 + metrics
+EXPOSE 50051 9090
 
 # 环境变量
 ENV CY_LLM_BACKEND=ascend
 ENV CY_LLM_MODEL_REGISTRY=/etc/worker/models.json
 ENV CY_LLM_INTERNAL_TOKEN=""
+ENV CY_LLM_HEALTH_PORT=9090
 
 # 启动命令
 CMD ["python3", "-m", "worker.main", "--serve", "--port", "50051"]

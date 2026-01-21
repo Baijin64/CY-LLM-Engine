@@ -102,6 +102,8 @@ services:
     depends_on:
       coordinator:
         condition: service_healthy
+      worker-nvidia:
+        condition: service_healthy
     networks:
       - cy-llm-network
     healthcheck:
@@ -142,11 +144,13 @@ services:
     networks:
       - cy-llm-network
     healthcheck:
-      test: ["CMD", "python", "-c", "import grpc; exit(0)"]
+      test: ["CMD", "python", "-c", "import grpc; from worker.proto_gen import AiInferenceStub, WorkerHealthRequest; ch = grpc.insecure_channel('localhost:50051'); stub = AiInferenceStub(ch); resp = stub.Health(WorkerHealthRequest()); raise SystemExit(0 if resp.healthy else 1)"]
       interval: 30s
       timeout: 30s
       retries: 5
       start_period: 600s  # 10 分钟，支持大模型加载
+    ports:
+      - "${WORKER_NVIDIA_METRICS_PORT:-9090}:9090"
 
   # ========== Ascend Worker (ascend-vllm / ascend-mindie) ==========
   worker-ascend:
@@ -177,6 +181,64 @@ services:
       - cy-llm-network
     profiles:
       - ascend
+    healthcheck:
+      test: ["CMD", "python", "-c", "import grpc; from worker.proto_gen import AiInferenceStub, WorkerHealthRequest; ch = grpc.insecure_channel('localhost:50051'); stub = AiInferenceStub(ch); resp = stub.Health(WorkerHealthRequest()); raise SystemExit(0 if resp.healthy else 1)"]
+      interval: 30s
+      timeout: 30s
+      retries: 5
+      start_period: 600s
+    ports:
+      - "${WORKER_ASCEND_METRICS_PORT:-9091}:9090"
+
+  # ========== Prometheus ==========
+  prometheus:
+    image: prom/prometheus:v2.53.1
+    container_name: cy-llm-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./prometheus/prometheus-config.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    networks:
+      - cy-llm-network
+    profiles:
+      - observability
+    depends_on:
+      gateway:
+        condition: service_healthy
+      coordinator:
+        condition: service_healthy
+      worker-nvidia:
+        condition: service_healthy
+
+  # ========== AlertManager ==========
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: cy-llm-alertmanager
+    restart: unless-stopped
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      - "${ALERTMANAGER_PORT:-9093}:9093"
+    networks:
+      - cy-llm-network
+    profiles:
+      - observability
+
+  # ========== Grafana (optional) ==========
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: cy-llm-grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    networks:
+      - cy-llm-network
+    profiles:
+      - observability
 
 # ========== 网络 ==========
 networks:

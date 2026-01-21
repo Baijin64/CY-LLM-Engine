@@ -1,5 +1,0 @@
-This file was the output from a previous EW->CY-LLM rename scan (archived). For up-to-date results, please run:
-
-  ./scripts/find-ew-references.sh
-
-It was archived to avoid being detected as a false positive by find scripts. If you still want to preserve the original content, it is available on the previous commit history.

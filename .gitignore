@@ -132,3 +132,6 @@ kaptKotlin/
 # Prevent accidentally committing local JetBrains config for Kotlin multi-platform
 *.kts.cache
 *.bak
+
+# Local Claude/assistant cache and metadata (do not track)
+.claude/

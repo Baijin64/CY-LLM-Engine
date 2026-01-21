@@ -225,6 +225,9 @@ class EngineRegistry:
                 hook(engine_type, info)
             except Exception as e:
                 LOGGER.warning("引擎注册钩子执行失败: %s", e)
+
+        if isinstance(module_path, type):
+            self._loaded_classes[engine_type] = module_path
     
     def unregister(self, engine_type: str) -> bool:
         """
@@ -384,10 +387,28 @@ class EngineFactory:
         engine_cls = _registry.get_class(engine_type)
         return engine_cls(*args, **kwargs)
 
+    @staticmethod
+    def register(engine_type: str, engine_cls: Type[BaseEngine]) -> None:
+        register_engine(engine_type, engine_cls, overwrite=True)
 
-def get_engine(engine_type: str, *args, **kwargs) -> BaseEngine:
+    @staticmethod
+    def auto_detect() -> str:
+        profile = detect_hardware()
+        if profile.has_cuda:
+            return DEFAULT_ENGINE_PRIORITY.get("cuda", "cuda-vllm")
+        if profile.has_ascend:
+            return DEFAULT_ENGINE_PRIORITY.get("ascend", "ascend-vllm")
+        return "cpu"
+
+
+def get_engine(engine_type: str, *args, **kwargs) -> Optional[BaseEngine]:
     """兼容旧 API: 直接创建引擎实例"""
-    return EngineFactory.create(engine_type, *args, **kwargs)
+    try:
+        return EngineFactory.create(engine_type, *args, **kwargs)
+    except ImportError as exc:
+        if engine_type in ENGINE_REGISTRY:
+            return None
+        raise exc
 
 
 def _lazy_import_engine(engine_path: str) -> type:
@@ -550,4 +571,3 @@ def check_engine_available(engine_type: str) -> bool:
 
 # 添加导入到 List
 from typing import List
-

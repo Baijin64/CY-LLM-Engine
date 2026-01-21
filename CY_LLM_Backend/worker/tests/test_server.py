@@ -51,6 +51,7 @@ class TestInferenceServer:
 
     def test_stream_predict(self, server, mock_engine):
         """stream_predict 应返回生成器"""
+        os.environ["CY_LLM_ALLOW_PLACEHOLDER_MODEL"] = "true"
         server.load_model("test-model", "/path/to/model")
         
         # 使用关键字参数调用（方法要求关键字参数）
@@ -63,8 +64,13 @@ class TestInferenceServer:
 
     def test_stream_predict_unknown_model(self, server):
         """未知模型应抛出异常"""
-        # 跳过：需要实际模型环境
-        pytest.skip("Requires actual model environment")
+        with patch.object(server, "ensure_model", side_effect=ValueError("unknown model")):
+            with pytest.raises(RuntimeError):
+                list(server.stream_predict(
+                    model_id="unknown",
+                    prompt="Hello",
+                    model_path="/path/to/model",
+                ))
 
     def test_get_loaded_models(self, server):
         """get_loaded_models 应返回列表"""
@@ -106,8 +112,15 @@ class TestInferenceServerAsync:
     @pytest.mark.asyncio
     async def test_async_stream_predict(self, server):
         """async_stream_predict 应异步返回 token"""
-        # 跳过：需要实际模型环境
-        pytest.skip("Requires actual model environment")
+        with patch.object(server, "stream_predict", return_value=iter(["a", "b"])):
+            items = []
+            async for chunk in server.async_stream_predict(
+                model_id="model",
+                prompt="Hello",
+                model_path="/path/to/model",
+            ):
+                items.append(chunk)
+            assert items == ["a", "b"]
 
     @pytest.mark.asyncio
     async def test_async_unload_model(self, server):

@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 import os
 import uuid
-from typing import Generator
+from typing import Generator, Optional, cast, List
 
 import grpc
 
@@ -61,7 +61,7 @@ def _verify_internal_token(context: grpc.ServicerContext) -> bool:
     return False
 
 
-def _job_status_to_proto(status: JobStatus) -> int:
+def _job_status_to_proto(status: JobStatus) -> TrainingStatusProto:
     """转换任务状态到 Proto 枚举"""
     mapping = {
         JobStatus.QUEUED: TrainingStatusProto.TRAINING_STATUS_QUEUED,
@@ -70,14 +70,14 @@ def _job_status_to_proto(status: JobStatus) -> int:
         JobStatus.FAILED: TrainingStatusProto.TRAINING_STATUS_FAILED,
         JobStatus.CANCELLED: TrainingStatusProto.TRAINING_STATUS_CANCELLED,
     }
-    return mapping.get(status, TrainingStatusProto.TRAINING_STATUS_UNKNOWN)
+    return cast(TrainingStatusProto, mapping.get(status, TrainingStatusProto.TRAINING_STATUS_UNKNOWN))
 
 
 def _progress_to_proto(progress: TrainingProgress) -> TrainingProgressProto:
     """转换进度对象到 Proto 消息"""
     return TrainingProgressProto(
         job_id=progress.job_id,
-        status=_job_status_to_proto(progress.status),
+        status=cast(TrainingStatusProto, _job_status_to_proto(progress.status)),
         current_epoch=progress.current_epoch,
         total_epochs=progress.total_epochs,
         current_step=progress.current_step,
@@ -97,8 +97,8 @@ def _progress_to_proto(progress: TrainingProgress) -> TrainingProgressProto:
 class AiTrainingServicerImpl(AiTrainingServicer):
     """AiTraining gRPC 服务实现"""
 
-    def __init__(self, engine: TrainingEngine = None):
-        self._engine = engine or get_training_engine()
+    def __init__(self, engine: Optional[TrainingEngine] = None):
+        self._engine = engine if engine is not None else get_training_engine()
         self._script_runner = CustomScriptRunner(max_concurrent=2)
 
     def StartTraining(
@@ -167,8 +167,14 @@ class AiTrainingServicerImpl(AiTrainingServicer):
                 hyperparams["logging_steps"] = hp.logging_steps
 
         # 数据集配置
-        dataset_path = request.dataset.path if request.dataset else None
-        settings_path = None  # TODO: 支持设定数据集路径
+        dataset_path = None
+        if request.dataset and request.dataset.path:
+            dataset_path = request.dataset.path
+        elif request.metadata and request.metadata.extra:
+            dataset_path = request.metadata.extra.get("dataset_path")
+        settings_path = None
+        if request.metadata and request.metadata.extra:
+            settings_path = request.metadata.extra.get("settings_path")
 
         if not dataset_path:
             LOGGER.error("[%s] 缺少数据集路径", trace_id)
@@ -214,7 +220,7 @@ class AiTrainingServicerImpl(AiTrainingServicer):
 
         response = TrainingStatusResponse(
             job_id=job.job_id,
-            status=_job_status_to_proto(job.status),
+            status=cast(TrainingStatusProto, _job_status_to_proto(job.status)),
             output_path=job.output_path or "",
         )
 
@@ -258,7 +264,7 @@ class AiTrainingServicerImpl(AiTrainingServicer):
                 TrainingStatusProto.TRAINING_STATUS_FAILED: JobStatus.FAILED,
                 TrainingStatusProto.TRAINING_STATUS_CANCELLED: JobStatus.CANCELLED,
             }
-            status_filter = [proto_to_status.get(s) for s in request.status_filter if s in proto_to_status]
+            status_filter = [proto_to_status[s] for s in request.status_filter if s in proto_to_status]
 
         jobs = self._engine.list_jobs(
             status_filter=status_filter,
@@ -269,7 +275,7 @@ class AiTrainingServicerImpl(AiTrainingServicer):
         for job in jobs:
             summaries.append(TrainingJobSummary(
                 job_id=job.job_id,
-                status=_job_status_to_proto(job.status),
+                status=cast(TrainingStatusProto, _job_status_to_proto(job.status)),
                 base_model=job.base_model,
                 character_name=job.character_name,
                 progress_percent=job.progress.progress_percent if job.progress else 0.0,

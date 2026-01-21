@@ -44,5 +44,13 @@ xxhash>=3.0.0         # 高性能哈希（缓存键）
 # Hot reload (optional)
 watchdog>=3.0.0       # 配置热重载
 
+# Structured logging
+structlog>=23.1.0      # 结构化 JSON 日志
+
+# OpenTelemetry (optional)
+opentelemetry-api>=1.21.0
+opentelemetry-sdk>=1.21.0
+opentelemetry-exporter-otlp>=1.21.0
+
 # Optional: For better performance or specific models
 # flash-attn>=2.0.0; platform_system == "Linux"

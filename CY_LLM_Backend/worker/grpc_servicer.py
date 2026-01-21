@@ -12,6 +12,13 @@ from concurrent import futures
 from typing import Generator, Iterator, Optional
 
 import grpc
+try:
+	from opentelemetry import trace  # type: ignore
+	from opentelemetry.trace.status import Status, StatusCode  # type: ignore
+except ImportError:
+	trace = None
+	Status = None
+	StatusCode = None
 
 from .proto_gen import (
     AiInferenceServicer,
@@ -34,6 +41,7 @@ from .exceptions import (
     GPUMemoryError,
 )
 from .utils.auth import verify_grpc_context
+from .utils.tls import GRPCTLSConfig, load_grpc_tls_config
 
 LOGGER = logging.getLogger("cy_llm.worker.grpc")
 
@@ -57,7 +65,7 @@ class AiInferenceServicerImpl(AiInferenceServicer):
         self._telemetry = telemetry or Telemetry()
 
     # ====== 兼容旧测试 API ======
-    
+
     def LoadModel(self, request, context):
         """加载模型 (兼容旧测试 API)"""
         model_id = getattr(request, 'model_id', '')
@@ -78,6 +86,7 @@ class AiInferenceServicerImpl(AiInferenceServicer):
         from .proto_gen import WorkerHealthResponse
         return WorkerHealthResponse(healthy=True, metrics={})
 
+
     def StreamPredict(
         self,
         request_iterator: Iterator[StreamPredictRequest],
@@ -97,6 +106,12 @@ class AiInferenceServicerImpl(AiInferenceServicer):
         trace_id = first_request.metadata.trace_id if first_request.metadata else str(uuid.uuid4())
         model_id = first_request.model_id or "default"
         prompt = first_request.prompt
+        if len(prompt) > GRPCDefaults.PROMPT_MAX_CHARS:
+            context.abort(
+                grpc.StatusCode.INVALID_ARGUMENT,
+                f"Prompt too long (max {GRPCDefaults.PROMPT_MAX_CHARS} chars)",
+            )
+            return
         adapter = first_request.adapter or None
         priority = first_request.priority or 0
 
@@ -113,6 +128,13 @@ class AiInferenceServicerImpl(AiInferenceServicer):
             if gen_params.repetition_penalty > 0:
                 generation_kwargs["repetition_penalty"] = gen_params.repetition_penalty
 
+        span = None
+        if trace is not None:
+            tracer = trace.get_tracer("cy_llm.worker.grpc")
+            span = tracer.start_span("worker.stream_predict")
+            span.set_attribute("trace_id", trace_id)
+            span.set_attribute("model_id", model_id)
+            span.set_attribute("priority", priority)
         LOGGER.info(
             "[%s] StreamPredict 请求: model=%s prompt_len=%d priority=%d",
             trace_id, model_id, len(prompt), priority,
@@ -192,35 +214,44 @@ class AiInferenceServicerImpl(AiInferenceServicer):
         prompt_cache_ttl = spec.prompt_cache_ttl
 
         try:
-            chunk_index = 0
-            for chunk in self._server.stream_predict(
-                model_id=model_id,
-                prompt=prompt,
-                model_path=model_path,
-                adapter_path=adapter_path,
-                engine_type=engine_type,
-                generation_kwargs=generation_kwargs or None,
-                engine_kwargs=engine_kwargs or None,
-                priority=priority,
-                enable_prompt_cache=enable_prompt_cache,
-                prompt_cache_ttl=prompt_cache_ttl,
-            ):
+            try:
+                chunk_index = 0
+                for chunk in self._server.stream_predict(
+                    model_id=model_id,
+                    prompt=prompt,
+                    model_path=model_path,
+                    adapter_path=adapter_path,
+                    engine_type=engine_type,
+                    generation_kwargs=generation_kwargs or None,
+                    engine_kwargs=engine_kwargs or None,
+                    priority=priority,
+                    enable_prompt_cache=enable_prompt_cache,
+                    prompt_cache_ttl=prompt_cache_ttl,
+                ):
+                    yield StreamPredictResponse(
+                        trace_id=trace_id,
+                        chunk=str(chunk),
+                        end_of_stream=False,
+                        index=chunk_index,
+                    )
+                    chunk_index += 1
+
+                # 发送结束标记
                 yield StreamPredictResponse(
                     trace_id=trace_id,
-                    chunk=chunk,
-                    end_of_stream=False,
+                    chunk="",
+                    end_of_stream=True,
                     index=chunk_index,
                 )
-                chunk_index += 1
-
-            # 发送结束标记
-            yield StreamPredictResponse(
-                trace_id=trace_id,
-                chunk="",
-                end_of_stream=True,
-                index=chunk_index,
-            )
-            LOGGER.info("[%s] StreamPredict 完成: chunks=%d", trace_id, chunk_index)
+                LOGGER.info("[%s] StreamPredict 完成: chunks=%d", trace_id, chunk_index)
+            except Exception as exc:
+                if span is not None and Status is not None and StatusCode is not None:
+                    span.record_exception(exc)
+                    span.set_status(Status(StatusCode.ERROR, str(exc)))
+                raise
+            finally:
+                if span is not None:
+                    span.end()
 
         except GPUMemoryError as exc:
             LOGGER.error("[%s] GPU 显存不足: %s", trace_id, exc)
@@ -317,6 +348,11 @@ class AiInferenceServicerImpl(AiInferenceServicer):
         )
 
 
+AIServiceServicer = AiInferenceServicerImpl
+
+
+
+
 def create_grpc_server(
     inference_server: InferenceServer,
     config: WorkerConfig,
@@ -367,12 +403,16 @@ def create_grpc_server(
         except ImportError as e:
             LOGGER.warning("训练服务未启用（依赖缺失）: %s", e)
 
-    server.add_insecure_port(f"[::]:{port}")
-    LOGGER.info("gRPC 服务器配置完成，端口: %d", port)
+    tls_config = load_grpc_tls_config()
+    if tls_config:
+        server.add_secure_port(f"[::]:{port}", tls_config.credentials)
+        LOGGER.info("gRPC TLS 已启用，端口: %d", port)
+    else:
+        server.add_insecure_port(f"[::]:{port}")
+        LOGGER.warning("gRPC 未启用 TLS，端口: %d", port)
 
     return server
 
 
 # ====== 兼容旧测试 API ======
 # 测试文件期望导入 AIServiceServicer 名称
-AIServiceServicer = AiInferenceServicerImpl

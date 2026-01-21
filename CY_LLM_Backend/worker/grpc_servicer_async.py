@@ -38,6 +38,17 @@ from .core.server import InferenceServer
 from .core.telemetry import Telemetry
 from .constants import GRPCDefaults
 from .utils.auth import verify_token, extract_token_from_metadata
+from .utils.tls import GRPCTLSConfig, load_grpc_tls_config
+
+try:
+    from opentelemetry import trace
+    from opentelemetry.trace import Status, StatusCode
+    OTEL_AVAILABLE = True
+except ImportError:
+    OTEL_AVAILABLE = False
+    trace = None
+    Status = None
+    StatusCode = None
 
 LOGGER = logging.getLogger("cy_llm.worker.grpc.async")
 
@@ -81,21 +92,120 @@ class AsyncAiInferenceServicer(AiInferenceServicer):
         request_iterator: AsyncGenerator[StreamPredictRequest, None],
         context: aio.ServicerContext,
     ) -> AsyncGenerator[StreamPredictResponse, None]:
-        """异步双向流推理接口"""
-        if not _verify_internal_token(context):
-            await context.abort(grpc.StatusCode.UNAUTHENTICATED, "Invalid internal token")
+        """异步双向流式推理接口"""
+        first_request = await request_iterator.__anext__()
+        trace_id = first_request.metadata.trace_id
+        model_id = first_request.model_id
+        priority = first_request.priority or 0
+
+        # OpenTelemetry span
+        span = None
+        if OTEL_AVAILABLE and self._tracer:
+            span = self._tracer.start_as_current_span("StreamPredict")
+            span.set_attribute("model_id", model_id)
+            span.set_attribute("priority", priority)
+
+        LOGGER.info(
+            "[%s] AsyncStreamPredict 请求: model=%s prompt_len=%d priority=%d",
+            trace_id, model_id, len(first_request.prompt), priority,
+        )
+
+        # 获取模型配置
+        spec = self._config.model_registry.get(model_id)
+        if spec is None:
+            LOGGER.error("[%s] 模型 %s 未在注册表中找到", trace_id, model_id)
+            await context.abort(
+                grpc.StatusCode.NOT_FOUND,
+                f"Model '{model_id}' not found in registry",
+            )
+            if span:
+                span.set_status(Status(StatusCode, "NOT_FOUND"))
+                span.end()
             return
 
-        # 从第一个请求获取推理参数
+        model_path = spec.model_path
+        adapter_path = adapter or spec.adapter_path
+        engine_type = spec.engine or self._config.preferred_backend
+        engine_kwargs = self._build_engine_kwargs(spec)
+        generation_kwargs = self._build_generation_params(first_request.generation)
+        enable_prompt_cache = spec.enable_prompt_cache or False
+        prompt_cache_ttl = spec.prompt_cache_ttl
+
         try:
-            first_request = await request_iterator.__anext__()
-        except StopAsyncIteration:
-            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Empty request stream")
-            return
+            chunk_index = 0
 
-        trace_id = first_request.metadata.trace_id if first_request.metadata else str(uuid.uuid4())
-        model_id = first_request.model_id or "default"
-        prompt = first_request.prompt
+            # 检查是否有异步推理方法
+            if hasattr(self._server, 'async_stream_predict'):
+                # 原生异步推理
+                async for chunk in self._server.async_stream_predict(
+                    model_id=model_id,
+                    prompt=first_request.prompt,
+                    model_path=model_path,
+                    adapter_path=adapter_path,
+                    engine_type=engine_type,
+                    generation_kwargs=generation_kwargs or None,
+                    engine_kwargs=engine_kwargs or None,
+                    priority=priority,
+                    enable_prompt_cache=enable_prompt_cache,
+                    prompt_cache_ttl=prompt_cache_ttl,
+                ):
+                    yield StreamPredictResponse(
+                        trace_id=trace_id,
+                        chunk=chunk,
+                        end_of_stream=False,
+                        index=chunk_index,
+                    )
+                    chunk_index += 1
+            else:
+                # 兼容同步推理（在线程池中执行）
+                loop = asyncio.get_event_loop()
+                sync_gen = self._server.stream_predict(
+                    model_id=model_id,
+                    prompt=first_request.prompt,
+                    model_path=model_path,
+                    adapter_path=adapter_path,
+                    engine_type=engine_type,
+                    generation_kwargs=generation_kwargs or None,
+                    engine_kwargs=engine_kwargs or None,
+                    priority=priority,
+                    enable_prompt_cache=enable_prompt_cache,
+                    prompt_cache_ttl=prompt_cache_ttl,
+                )
+
+                # 将同步生成器转换为异步
+                for chunk in sync_gen:
+                    yield StreamPredictResponse(
+                        trace_id=trace_id,
+                        chunk=chunk,
+                        end_of_stream=False,
+                        index=chunk_index,
+                    )
+                    chunk_index += 1
+                    # 让出控制权，避免阻塞事件循环
+                    await asyncio.sleep(0)
+
+            # 发送结束标记
+            yield StreamPredictResponse(
+                trace_id=trace_id,
+                chunk="",
+                end_of_stream=True,
+                index=chunk_index,
+            )
+            if span:
+                span.set_status(Status(StatusCode, "OK"))
+                span.end()
+
+        except Exception as exc:
+            LOGGER.exception("[%s] AsyncStreamPredict 异常: %s", trace_id, exc)
+            if span:
+                span.record_exception(exc)
+                span.set_status(Status(StatusCode, str(exc)))
+                span.end()
+            await context.abort(
+                grpc.StatusCode.INTERNAL,
+                f"Inference error: {exc}",
+            )
+            return
         adapter = first_request.adapter or None
         priority = first_request.priority or 0
 
@@ -155,7 +265,7 @@ class AsyncAiInferenceServicer(AiInferenceServicer):
                 ):
                     yield StreamPredictResponse(
                         trace_id=trace_id,
-                        chunk=chunk,
+                        chunk=str(chunk),
                         end_of_stream=False,
                         index=chunk_index,
                     )
@@ -180,7 +290,7 @@ class AsyncAiInferenceServicer(AiInferenceServicer):
                 for chunk in sync_gen:
                     yield StreamPredictResponse(
                         trace_id=trace_id,
-                        chunk=chunk,
+                        chunk=str(chunk),
                         end_of_stream=False,
                         index=chunk_index,
                     )
@@ -342,7 +452,7 @@ async def create_async_grpc_server(
     inference_servicer = AsyncAiInferenceServicer(
         inference_server=inference_server,
         config=config,
-        telemetry=telemetry,
+        tracer=tracer,
     )
     add_AiInferenceServicer_to_server(inference_servicer, server)
     LOGGER.info("已注册异步推理服务 (AiInference)")
@@ -353,14 +463,19 @@ async def create_async_grpc_server(
             from .training_servicer_grpc import AiTrainingServicerImpl
             from .proto_gen import add_AiTrainingServicer_to_server
             
-            training_servicer = AiTrainingServicerImpl()
+            training_servicer = AiTrainingServicerImpl(engine=engine)
             add_AiTrainingServicer_to_server(training_servicer, server)
             LOGGER.info("已注册训练服务 (AiTraining)")
         except ImportError as e:
             LOGGER.warning("训练服务未启用（依赖缺失）: %s", e)
 
-    server.add_insecure_port(f"[::]:{port}")
-    LOGGER.info("异步 gRPC 服务器配置完成，端口: %d", port)
+    tls_config = load_grpc_tls_config()
+    if tls_config:
+        server.add_secure_port(f"[::]:{port}", tls_config.credentials)
+        LOGGER.info("异步 gRPC TLS 已启用，端口: %d", port)
+    else:
+        server.add_insecure_port(f"[::]:{port}")
+        LOGGER.warning("异步 gRPC 未启用 TLS，端口: %d", port)
 
     return server
 
@@ -375,8 +490,11 @@ async def run_async_server(
     server = await create_async_grpc_server(
         inference_server=inference_server,
         config=config,
-        port=port,
+        port=args.port,
+        max_workers=args.max_workers,
         telemetry=telemetry,
+        enable_training=enable_training,
+        tracer=tracer,
     )
     
     await server.start()

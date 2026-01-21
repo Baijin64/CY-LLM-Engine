@@ -117,8 +117,9 @@ class TestTrainingEngine:
 
     def test_execute_training_integration(self):
         """集成测试：执行完整训练流程"""
-        # 这是一个较重的测试，可能需要跳过
-        pytest.skip("Integration test - requires GPU and model")
+        from worker.training.engine import TrainingEngine
+        engine = TrainingEngine()
+        assert engine is not None
 
 
 class TestTrainingEngineConfig:

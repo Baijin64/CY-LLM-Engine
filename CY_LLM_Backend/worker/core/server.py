@@ -6,10 +6,11 @@ server.py
 
 from __future__ import annotations
 
+import os
 import queue
 import threading
 import time
-from typing import Callable, Dict, Generator, List, Optional, TYPE_CHECKING
+from typing import Callable, Dict, Generator, List, Optional, TYPE_CHECKING, cast
 
 import logging
 
@@ -212,7 +213,10 @@ class InferenceServer:
 		if engine is not None:
 			return engine
 
-		# 使用 per-model 锁防止并发重复加载同一模型
+		if model_path == "/path/to/model" and os.getenv("CY_LLM_ALLOW_PLACEHOLDER_MODEL") != "true":
+			raise ValueError("Placeholder model path")
+
+        # 使用 per-model 锁防止并发重复加载同一模型
 		lock = self._model_lock.setdefault(model_id, threading.Lock())
 		with lock:
 			# 再次检查，避免竞争条件下重复加载
@@ -275,6 +279,8 @@ class InferenceServer:
 		# 参数检查：prompt 不能为空
 		if not prompt.strip():
 			raise ValueError("Prompt must not be empty.")
+		if len(prompt) > 50000:
+			raise ValueError("Prompt too long (max 50000 chars).")
 
 		gen_kwargs = dict(generation_kwargs or {})
 
@@ -286,11 +292,12 @@ class InferenceServer:
 			if cached_result is not None:
 				# 缓存命中，直接返回缓存的结果
 				self._telemetry.track_cache_hit()
-				yield cached_result
+				yield cast(str, cached_result)
 				return
 
-		response_queue: "queue.Queue[object]" = queue.Queue()
-		sentinel = object()
+		response_queue: queue.Queue[str] = queue.Queue()
+		sentinel = "__CY_LLM_STREAM_END__"
+		error_holder: List[Exception] = []
 		collected_chunks: List[str] = []  # 用于收集响应以便缓存
 
 		# 工作函数：由调度器在后台线程调用，负责实际的推理并把结果放入队列
@@ -308,16 +315,17 @@ class InferenceServer:
 				)
 				# 调用引擎的 infer，流式读取生成数据并入队
 				for chunk in engine.infer(prompt, **gen_kwargs):
-					response_queue.put(chunk)
+					response_queue.put(str(chunk))
 					if enable_prompt_cache:
-						collected_chunks.append(chunk)
+						collected_chunks.append(str(chunk))
 				# 成功完成一次请求
 				self._telemetry.track_request_end(time.time() - start, success=True)
 				response_queue.put(sentinel)
 			except Exception as exc:  # noqa: BLE001
-				# 发生异常时记录并将异常对象放入队列，外层会重新抛出
+				# 发生异常时记录并通知外层处理
 				self._telemetry.track_request_end(time.time() - start, success=False)
-				response_queue.put(exc)
+				error_holder.append(exc)
+				response_queue.put(sentinel)
 			finally:
 				# 标记该模型最近访问时间，防止被误回收
 				self._memory.access_model(model_id)
@@ -328,12 +336,13 @@ class InferenceServer:
 			raise RuntimeError("Server is overloaded, please retry later.") from exc
 
 		while True:
-			chunk = response_queue.get()
-			if chunk is sentinel:
+			item: str = response_queue.get()
+			if item == sentinel:
 				break
-			if isinstance(chunk, Exception):
-				raise chunk
-			yield chunk
+			yield item
+
+		if error_holder:
+			raise RuntimeError("Inference failed") from error_holder[0]
 
 		# ========== 缓存完整响应 ==========
 		if enable_prompt_cache and collected_chunks:
@@ -382,8 +391,9 @@ class InferenceServer:
 		import asyncio
 		
 		loop = asyncio.get_running_loop()
-		response_queue: "queue.Queue[object]" = queue.Queue()
-		sentinel = object()
+		response_queue: queue.Queue[str] = queue.Queue()
+		sentinel = "__CY_LLM_STREAM_END__"
+		error_holder: List[Exception] = []
 		
 		def _sync_generate():
 			try:
@@ -401,7 +411,7 @@ class InferenceServer:
 				):
 					response_queue.put(chunk)
 			except Exception as e:
-				response_queue.put(e)
+				error_holder.append(e)
 			finally:
 				response_queue.put(sentinel)
 		
@@ -412,14 +422,15 @@ class InferenceServer:
 		while True:
 			# 非阻塞获取，配合 sleep 让出控制权
 			try:
-				chunk = response_queue.get_nowait()
-				if chunk is sentinel:
+				item: str = response_queue.get_nowait()
+				if item == sentinel:
 					break
-				if isinstance(chunk, Exception):
-					raise chunk
-				yield chunk
+				yield item
 			except queue.Empty:
 				await asyncio.sleep(0.001)  # 1ms 轮询间隔
+
+		if error_holder:
+			raise RuntimeError("Inference failed") from error_holder[0]
 
 	def shutdown(self) -> None:
 		self._scheduler.shutdown()

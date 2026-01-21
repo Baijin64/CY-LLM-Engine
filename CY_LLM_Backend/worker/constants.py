@@ -32,6 +32,9 @@ class GRPCDefaults:
     # 兼容旧名称
     TIMEOUT_SECONDS: Final[int] = 30
 
+    # Prompt 长度限制（字符数）
+    PROMPT_MAX_CHARS: Final[int] = 50_000
+
 
 class TrainingDefaults:
     """训练相关常量"""

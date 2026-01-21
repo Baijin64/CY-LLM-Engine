@@ -33,7 +33,7 @@ COPY proto/ proto/
 # 下载依赖（利用 Docker 缓存）
 WORKDIR /app/coordinator
 # Explicitly pass a compatible Java home to Gradle when building in the container
-RUN ./gradlew dependencies --no-daemon -Dorg.gradle.java.home=/opt/java/openjdk || true
+RUN ./gradlew dependencies --no-daemon --build-cache -Dorg.gradle.java.home=/opt/java/openjdk || true
 
 # Some downloaded protoc plugins may not be executable (or may be named with .exe). Ensure any
 # matching protoc-gen-grpc-java files are executable so Gradle can invoke them.
@@ -42,7 +42,7 @@ RUN find /root/.gradle -type f -name "*.exe" -exec chmod +x {} \; || true
 
 # 复制源代码并构建
 COPY coordinator/src src/
-RUN ./gradlew bootJar --no-daemon -Dorg.gradle.java.home=/opt/java/openjdk
+RUN ./gradlew bootJar --no-daemon --build-cache -Dorg.gradle.java.home=/opt/java/openjdk
 
 # ========== 运行时镜像 ==========
 FROM eclipse-temurin:21-jre
