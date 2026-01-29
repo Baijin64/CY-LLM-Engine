@@ -23,18 +23,18 @@ pip install -r requirements.txt
 1. 生成语气模仿数据（例如 `furina_train.jsonl`）：
 
 ```bash
-python src/dataset_converter.py \
-  --raw_dir ../preparation/dialogue_gi/extraction \
-  --output_file ./data/furina_train.jsonl \
+python CY_LLM_Training/src/dataset_converter.py \
+  --raw_dir ./CY_LLM_Training/preparation/dialogue_gi/extraction \
+  --output_file ./CY_LLM_Training/data/furina_train.jsonl \
   --character "芙宁娜"
 ```
 
 2. 生成设定/背景数据（例如 `settings_modified_furina.json` -> `settings_train.jsonl`）：
 
 ```bash
-python src/dataset_converter.py \
-  --raw_dir data \
-  --output_file ./data/settings_train.jsonl \
+python CY_LLM_Training/src/dataset_converter.py \
+  --raw_dir CY_LLM_Training/data \
+  --output_file ./CY_LLM_Training/data/settings_train.jsonl \
   --character "芙宁娜"
 ```
 
@@ -49,11 +49,11 @@ python src/dataset_converter.py \
 基本训练命令（联网可用，使用 HF ID）：
 
 ```bash
-python src/train_lora.py \
-  --model_name "deepseek-ai/deepseek-llm-7b-chat" \
-  --dataset_path ./data/furina_train.jsonl \
-  --settings_path ./data/settings_train.jsonl \
-  --output_dir ./checkpoints/furina_lora_v2 \
+python CY_LLM_Training/src/train_lora.py \
+  --model_name "facebook/opt-2.7b" \
+  --dataset_path ./CY_LLM_Training/data/furina_train.jsonl \
+  --settings_path ./CY_LLM_Training/data/settings_train.jsonl \
+  --output_dir ./CY_LLM_Training/checkpoints/furina_lora_v3 \
   --batch_size 2 \
   --grad_accum 8 \
   --epochs 3
@@ -64,21 +64,21 @@ python src/train_lora.py \
 - 如果你已经在本地有模型目录（例如 `/home/username/models/deepseek-llm-7b-chat`），直接将 `--model_name` 指向本地路径：
 
 ```bash
-python src/train_lora.py \
+python CY_LLM_Training/src/train_lora.py \
   --model_name /home/username/models/deepseek-llm-7b-chat \
-  --dataset_path ./data/furina_train.jsonl \
-  --settings_path ./data/settings_train.jsonl \
-  --output_dir ./checkpoints/furina_lora_v2
+  --dataset_path ./CY_LLM_Training/data/furina_train.jsonl \
+  --settings_path ./CY_LLM_Training/data/settings_train.jsonl \
+  --output_dir ./CY_LLM_Training/checkpoints/furina_lora_v2
 ```
 
 - 如果模型已缓存在 Hugging Face 本地缓存（`~/.cache/huggingface`），可以启用离线模式：
 
 ```bash
 TRANSFORMERS_OFFLINE=1 HF_DATASETS_OFFLINE=1 \
-python src/train_lora.py \
-  --dataset_path ./data/furina_train.jsonl \
-  --settings_path ./data/settings_train.jsonl \
-  --output_dir ./checkpoints/furina_lora_v2
+python CY_LLM_Training/src/train_lora.py \
+  --dataset_path ./CY_LLM_Training/data/furina_train.jsonl \
+  --settings_path ./CY_LLM_Training/data/settings_train.jsonl \
+  --output_dir ./CY_LLM_Training/checkpoints/furina_lora_v2
 ```
 
 注意：离线模式要求基座模型已经完整下载到本机缓存或你提供了本地模型路径。
@@ -94,9 +94,9 @@ python src/train_lora.py \
 训练完成后可用 `src/inference.py` 做交互式测试：
 
 ```bash
-python src/inference.py \
+python CY_LLM_Training/src/inference.py \
   --base_model /home/username/models/deepseek-llm-7b-chat \
-  --lora_path checkpoints/furina_lora_v2 \
+  --lora_path CY_LLM_Training/checkpoints/furina_lora_v2 \
   --character 芙宁娜
 ```
 

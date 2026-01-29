@@ -24,11 +24,14 @@ WORKER_DIR="$BACKEND_DIR/worker"
 DEPLOY_DIR="$BACKEND_DIR/deploy"
 
 # 默认配置
-DEFAULT_ENV_NAME="${CY_LLM_CONDA_ENV:-trt}"
+DEFAULT_ENV_NAME="${CY_LLM_CONDA_ENV:-vllm}"
 DEFAULT_PYTHON_VERSION="${CY_LLM_PYTHON_VERSION:-3.10}"
 DEFAULT_PORT="${CY_LLM_PORT:-8080}"
 DEFAULT_WORKER_PORT="${CY_LLM_WORKER_PORT:-50051}"
-DEFAULT_ENGINE="${CY_LLM_ENGINE:-cuda-trt}"
+DEFAULT_ENGINE="${CY_LLM_ENGINE:-cuda-vllm}"
+
+PIP_MIRROR="https://pypi.tuna.tsinghua.edu.cn/simple"
+PIP_ARGS="--index-url $PIP_MIRROR --trusted-host pypi.tuna.tsinghua.edu.cn"
 
 # 引擎到依赖文件的映射
 declare -A ENGINE_REQUIREMENTS=(
@@ -147,7 +150,9 @@ cmd_setup() {
                 # 显示安装开始信息（尽量提取包名==版本或显示整行）
                 echo -e "${YELLOW}正在安装 ${line_trimmed}${NC}"
 
-                if ! $conda_cmd run -n "$env_name" pip install --no-cache-dir "$line_trimmed" -q; then
+                if ! $conda_cmd run -n "$env_name" pip install --no-cache-dir \
+                    $PIP_ARGS \
+                    "$line_trimmed" -q; then
                     warn "安装 ${line_trimmed} 失败，回退使用整体 requirements 安装以获得完整错误信息"
                     install_failed=true
                     break
@@ -158,7 +163,9 @@ cmd_setup() {
 
             if $install_failed; then
                 # 回退到一次性安装以显示 pip 的完整错误输出
-                $conda_cmd run -n "$env_name" pip install -r "$SCRIPT_DIR/$req_file"
+                $conda_cmd run -n "$env_name" pip install \
+                $PIP_ARGS \
+                -r "$SCRIPT_DIR/$req_file"
             fi
 
             success "依赖安装完成"

@@ -14,7 +14,7 @@ from peft import (
     prepare_model_for_kbit_training,
     TaskType
 )
-from trl import SFTTrainer
+from trl import SFTTrainer, SFTConfig
 from datasets import load_dataset, concatenate_datasets
 import argparse
 
@@ -49,8 +49,8 @@ def train(args):
         task_type=TaskType.CAUSAL_LM,
     )
     
-    model = get_peft_model(model, peft_config)
-    model.print_trainable_parameters()
+    # model = get_peft_model(model, peft_config)
+    # model.print_trainable_parameters()
 
     # 3. 加载 Tokenizer
     tokenizer = AutoTokenizer.from_pretrained(args.model_name, trust_remote_code=True)
@@ -83,26 +83,19 @@ def train(args):
 
     # 5. 定义格式化函数
     def formatting_prompts_func(example):
-        output_texts = []
-        for i in range(len(example['instruction'])):
-            # 构建 Prompt 格式:
-            # DeepSeek V3/V2 推荐使用 ChatML 格式或 Alpaca 格式，这里使用 Alpaca 变体
-            # 如果模型有特定的 chat_template，最好使用 tokenizer.apply_chat_template
-            
-            instruction = example['instruction'][i]
-            input_str = example['input'][i]
-            output_str = example['output'][i]
-            
-            if input_str:
-                text = f"### Instruction:\n{instruction}\n\n### Input:\n{input_str}\n\n### Response:\n{output_str}<|endoftext|>"
-            else:
-                text = f"### Instruction:\n{instruction}\n\n### Response:\n{output_str}<|endoftext|>"
-            
-            output_texts.append(text)
-        return output_texts
+        instruction = example.get('instruction') or ""
+        input_str = example.get('input')
+        output_str = example.get('output') or ""
+        
+        if input_str:
+            text = f"### Instruction:\n{instruction}\n\n### Input:\n{input_str}\n\n### Response:\n{output_str}<|endoftext|>"
+        else:
+            text = f"### Instruction:\n{instruction}\n\n### Response:\n{output_str}<|endoftext|>"
+        
+        return text
 
     # 6. 训练参数
-    training_args = TrainingArguments(
+    training_args = SFTConfig(
         output_dir=args.output_dir,
         per_device_train_batch_size=args.batch_size,
         gradient_accumulation_steps=args.grad_accum,
@@ -119,6 +112,9 @@ def train(args):
         max_grad_norm=0.3,
         warmup_ratio=0.03,
         lr_scheduler_type="cosine",
+        max_length=args.max_seq_length,
+        packing=False, # 对于短对话，packing=False 可能更稳定
+        dataset_text_field="text", # 占位，使用 formatting_func 时会被忽略但 SFTConfig 可能检测
     )
 
     # 7. 初始化 Trainer
@@ -128,9 +124,7 @@ def train(args):
         peft_config=peft_config,
         formatting_func=formatting_prompts_func,
         args=training_args,
-        tokenizer=tokenizer,
-        max_seq_length=args.max_seq_length,
-        packing=False, # 对于短对话，packing=False 可能更稳定
+        processing_class=tokenizer,
     )
 
     print("Starting training...")
