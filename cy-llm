@@ -22,6 +22,7 @@ BACKEND_DIR="$SCRIPT_DIR/CY_LLM_Backend"
 GATEWAY_DIR="$BACKEND_DIR/gateway"
 WORKER_DIR="$BACKEND_DIR/worker"
 DEPLOY_DIR="$BACKEND_DIR/deploy"
+TRAINING_DIR="$SCRIPT_DIR/CY_LLM_Training"
 
 # 默认配置
 DEFAULT_ENV_NAME="${CY_LLM_CONDA_ENV:-vllm}"
@@ -29,6 +30,11 @@ DEFAULT_PYTHON_VERSION="${CY_LLM_PYTHON_VERSION:-3.10}"
 DEFAULT_PORT="${CY_LLM_PORT:-8080}"
 DEFAULT_WORKER_PORT="${CY_LLM_WORKER_PORT:-50051}"
 DEFAULT_ENGINE="${CY_LLM_ENGINE:-cuda-vllm}"
+DEFAULT_MODEL="${CY_LL_MODEL:-facebook/opt-2.7b}"
+DEFAULT_CHARACTER="${CY_LLM_CHARACTER:-芙宁娜}"
+DEFAULT_BATCH_SIZE="${CY_LLM_BATCH_SIZE:-2}"
+DEFAULT_GRAD_ACCUM="${CY_LLM_GRAD_ACCUM:-8}"
+DEFAULT_EPOCHS="${CY_LLM_EPOCHS:-3}"
 
 PIP_MIRROR="https://pypi.tuna.tsinghua.edu.cn/simple"
 PIP_ARGS="--index-url $PIP_MIRROR --trusted-host pypi.tuna.tsinghua.edu.cn"
@@ -618,6 +624,130 @@ cmd_models() {
 }
 
 # =============================================================================
+# 命令: prepare - 数据预处理
+# =============================================================================
+cmd_prepare() {
+    local env_name="$DEFAULT_ENV_NAME"
+    local raw_dir=""
+    local output_file=""
+    local character="$DEFAULT_CHARACTER"
+    
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --env)      env_name="$2"; shift 2 ;;
+            --raw)      raw_dir="$2"; shift 2 ;;
+            --out)      output_file="$2"; shift 2 ;;
+            --char)     character="$2"; shift 2 ;;
+            *) shift ;;
+        esac
+    done
+
+    if [[ -z "$raw_dir" || -z "$output_file" ]]; then
+        error "用法: ./cy-llm prepare --raw <raw_dir> --out <output_file> [--char <character>]"
+        exit 1
+    fi
+
+    step "数据预处理: $character"
+    
+    local conda_cmd=$(get_conda)
+    $conda_cmd run -n "$env_name" python "$TRAINING_DIR/src/dataset_converter.py" \
+        --raw_dir "$raw_dir" \
+        --output_file "$output_file" \
+        --character "$character"
+        
+    success "预处理完成: $output_file"
+}
+
+# =============================================================================
+# 命令: train - LoRA 微调训练
+# =============================================================================
+cmd_train() {
+    local env_name="$DEFAULT_ENV_NAME"
+    local model="$DEFAULT_MODEL"
+    local dataset=""
+    local settings=""
+    local output=""
+    local batch="$DEFAULT_BATCH_SIZE"
+    local grad_accum="$DEFAULT_GRAD_ACCUM"
+    local epochs="$DEFAULT_EPOCHS"
+    
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --env)          env_name="$2"; shift 2 ;;
+            --model)        model="$2"; shift 2 ;;
+            --dataset)      dataset="$2"; shift 2 ;;
+            --settings)     settings="$2"; shift 2 ;;
+            --output)       output="$2"; shift 2 ;;
+            --batch)        batch="$2"; shift 2 ;;
+            --grad-accum)   grad_accum="$2"; shift 2 ;;
+            --epochs)       epochs="$2"; shift 2 ;;
+            *) shift ;;
+        esac
+    done
+
+    if [[ -z "$dataset" || -z "$output" ]]; then
+        error "用法: ./cy-llm train --dataset <path> --output <dir> [--model <id>] [--settings <path>] ..."
+        exit 1
+    fi
+
+    step "开始 LoRA 微调训练"
+    info "基座模型: $model"
+    info "训练数据: $dataset"
+    [[ -n "$settings" ]] && info "设定数据: $settings"
+    info "输出目录: $output"
+
+    local conda_cmd=$(get_conda)
+    local -a cmd_args=(
+        "$TRAINING_DIR/src/train_lora.py"
+        --model_name "$model"
+        --dataset_path "$dataset"
+        --output_dir "$output"
+        --batch_size "$batch"
+        --grad_accum "$grad_accum"
+        --epochs "$epochs"
+    )
+    
+    [[ -n "$settings" ]] && cmd_args+=(--settings_path "$settings")
+
+    $conda_cmd run -n "$env_name" python "${cmd_args[@]}"
+    
+    success "训练完成，权重保存至: $output"
+}
+
+# =============================================================================
+# 命令: chat - 交互式 LoRA 推理
+# =============================================================================
+cmd_chat() {
+    local env_name="$DEFAULT_ENV_NAME"
+    local model="$DEFAULT_MODEL"
+    local lora=""
+    local character="$DEFAULT_CHARACTER"
+    
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --env)      env_name="$2"; shift 2 ;;
+            --model)    model="$2"; shift 2 ;;
+            --lora)     lora="$2"; shift 2 ;;
+            --char)     character="$2"; shift 2 ;;
+            *) shift ;;
+        esac
+    done
+
+    if [[ -z "$model" || -z "$lora" ]]; then
+        error "用法: ./cy-llm chat --model <base_model> --lora <lora_path> [--char <character>]"
+        exit 1
+    fi
+
+    step "进入交互式对话 ($character)"
+    
+    local conda_cmd=$(get_conda)
+    $conda_cmd run -n "$env_name" python "$TRAINING_DIR/src/inference.py" \
+        --base_model "$model" \
+        --lora_path "$lora" \
+        --character "$character"
+}
+
+# =============================================================================
 # 命令: config - 配置管理
 # =============================================================================
 cmd_config() {
@@ -829,6 +959,9 @@ CY-LLM Engine - 统一部署命令行工具
   docker      Docker Compose 部署
   test        运行测试
   models      模型管理
+  prepare     数据预处理 (dataset_converter)
+  train       LoRA 微调训练 (train_lora)
+  chat        交互式 LoRA 推理测试 (inference)
   help        显示帮助信息
 
 常用选项:
@@ -872,6 +1005,15 @@ CY-LLM Engine - 统一部署命令行工具
   # 查看状态
   ./cy-llm status
 
+  # 数据预处理
+  ./cy-llm prepare --raw ./raw_data --out ./data/train.jsonl --char 芙宁娜
+
+  # 启动 LoRA 训练
+  ./cy-llm train --dataset ./data/train.jsonl --output ./checkpoints/lora_v1 --model facebook/opt-2.7b
+
+  # 交互式对话测试
+  ./cy-llm chat --model facebook/opt-2.7b --lora ./checkpoints/lora_v1
+
 环境变量:
     CY_LLM_ENGINE          默认推理引擎
     CY_LLM_CONDA_ENV       默认 Conda 环境名
@@ -902,6 +1044,9 @@ main() {
         convert-trt) cmd_convert_trt "$@" ;;
         test)       cmd_test "$@" ;;
         models)     cmd_models "$@" ;;
+        prepare)    cmd_prepare "$@" ;;
+        train)      cmd_train "$@" ;;
+        chat)       cmd_chat "$@" ;;
         help|--help|-h) cmd_help ;;
         *)
             error "未知命令: $command"

@@ -144,6 +144,9 @@ Commands:
   test        运行测试
   models      模型管理
   convert-trt 转换模型为 TensorRT-LLM 引擎
+  prepare     数据预处理
+  train       LoRA 微调训练
+  chat        交互式 LoRA 推理
   help        显示帮助
 
 Options:
@@ -159,6 +162,9 @@ Examples:
   ./cy-llm docker up --scale 2            # Docker 双 Worker
   ./cy-llm status                         # 查看状态
   ./cy-llm convert-trt --model Qwen/Qwen2.5-7B --output /models/trt  # 转换 TRT 模型
+  ./cy-llm prepare --raw /data/raw --out /data/train.jsonl           # 预处理数据
+  ./cy-llm train --dataset /data/train.jsonl --output /models/lora   # 启动训练
+  ./cy-llm chat --model qwen2.5-7b --lora /models/lora               # 加载 LoRA 对话
 ```
 
 ---
