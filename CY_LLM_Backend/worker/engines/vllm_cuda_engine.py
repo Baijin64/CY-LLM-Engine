@@ -115,6 +115,15 @@ class VllmCudaEngine(BaseEngine):
         self.max_loras = max_loras
         self.enable_prefix_caching = enable_prefix_caching
         self.kv_cache_dtype = kv_cache_dtype
+        
+        # 移除 vLLM 不支持的参数，避免传递给 EngineArgs 时报错
+        kwargs.pop("use_4bit", None)
+        
+        # vLLM 不支持 bitsandbytes 量化字符串（它有自己的量化枚举）
+        if kwargs.get("quantization") == "bitsandbytes":
+            LOGGER.warning("vLLM 引擎不支持 bitsandbytes 量化，已忽略。请使用 AWQ/GPTQ 或切换到 nvidia 引擎。")
+            kwargs.pop("quantization")
+
         self.extra_kwargs = kwargs
 
         self._llm: Optional[Any] = None  # vLLM LLM 实例

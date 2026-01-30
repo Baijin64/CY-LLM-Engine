@@ -22,6 +22,7 @@
 | [docs/TESTING.md](./docs/TESTING.md) | 测试指南与 CI 配置 |
 | [docs/FAQ.md](./docs/FAQ.md) | 常见问题解答 |
 | [docs/TRT_GUIDE.md](./docs/TRT_GUIDE.md) | TensorRT-LLM 专用指南 |
+| [DEVELOPMENT_LITE.md](./DEVELOPMENT_LITE.md) | Lite 开发与联调指南 |
 
 ### 快速指南
 
@@ -73,6 +74,15 @@ curl http://localhost:8000/v1/chat/completions \
 ```
 
 > Lite 版本默认端口为 8000（Gateway），Coordinator 为 50051，Worker 为 50052。
+
+### Docker Compose (Community Lite)
+
+```bash
+docker compose -f docker-compose.community.yml up -d
+
+# 查看状态
+docker compose -f docker-compose.community.yml ps
+```
 
 ---
 

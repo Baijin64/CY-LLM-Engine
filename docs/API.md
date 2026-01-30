@@ -36,6 +36,76 @@ curl -H "X-API-Key: YOUR_API_KEY" \
 
 ---
 
+## Lite API (OpenAI 兼容)
+
+> Lite 版本使用 OpenAI 兼容接口，默认端口为 8000。
+
+### 基础信息
+
+| 属性 | 值 |
+|------|-----|
+| 基础路径 | `/v1` |
+| 默认端口 | 8000 |
+| Content-Type | `application/json` |
+
+### 认证方式
+
+若配置了 `GATEWAY_API_TOKEN`，需通过 `Authorization: Bearer <token>` 认证。
+
+### 1. Chat Completions (非流式)
+
+**POST** `/v1/chat/completions`
+
+#### 请求参数
+
+| 字段 | 类型 | 必填 | 描述 |
+|------|------|------|------|
+| `model` | string | 否 | 逻辑模型 ID，默认 `default` |
+| `messages` | array | 是 | OpenAI messages 列表 |
+| `max_tokens` | int | 否 | 最大生成 token 数（默认 256） |
+| `temperature` | float | 否 | 温度（默认 0.7） |
+| `top_p` | float | 否 | Top-p 采样（默认 0.9） |
+| `repetition_penalty` | float | 否 | 重复惩罚（默认 1.0） |
+
+#### 请求示例
+
+```bash
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"default","messages":[{"role":"user","content":"你好"}]}'
+```
+
+#### 响应示例
+
+```json
+{
+  "id": "chatcmpl-6d3a1f7d4e024ccbb7fbbdc9b4d3f0c9",
+  "object": "chat.completion",
+  "created": 1704067200,
+  "model": "default",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "你好！有什么可以帮你？"
+      },
+      "finish_reason": "stop"
+    }
+  ]
+}
+```
+
+### 2. 健康检查
+
+**GET** `/health`
+
+#### 响应示例
+
+```json
+{"status":"ok"}
+```
+
 ## 推理接口
 
 ### 1. 非流式推理

@@ -19,12 +19,12 @@
     "model_path": "deepseek-ai/deepseek-llm-7b-chat",
     "adapter_path": "/checkpoints/furina_lora",
     "engine": null,
-    "use_4bit": true
+    "quantization": "bitsandbytes"
   },
   "paimon": {
     "model_path": "deepseek-ai/deepseek-llm-7b-chat",
     "adapter_path": "/checkpoints/paimon_lora",
     "engine": null,
-    "use_4bit": true
+    "quantization": "bitsandbytes"
   }
 }

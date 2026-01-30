@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#curl -X POST http://localhost:8080/api/v1/inference/stream -H "Content-Type: application/json" -H "X-API-Key: 111" -d "{\"modelId\": \"default\", \"prompt\": \"你好\"}"
+#curl http://localhost:8000/v1/chat/completions -H "Content-Type: application/json" -d "{\"model\": \"default\", \"messages\": [{\"role\": \"user\", \"content\": \"hello\"}], \"temperature\": 0.7}"
 #export GATEWAY_SECURITY_API_KEY="111"
 #export HF_ENDPOINT="https://hf-mirror.com"
 # =============================================================================
@@ -323,9 +323,7 @@ cmd_worker() {
     local conda_cmd=$(get_conda)
     
     export CY_LLM_ENGINE="$engine"
-        export CY_LLM_ENGINE="$engine"
     [[ -n "$model" ]] && export CY_LLM_MODEL="$model"
-        [[ -n "$model" ]] && export CY_LLM_MODEL="$model"
     
     info "Engine: $engine"
     info "Port: $port"
@@ -348,7 +346,7 @@ cmd_lite() {
     local coordinator_port="$DEFAULT_LITE_COORDINATOR_PORT"
     local worker_port="$DEFAULT_LITE_WORKER_PORT"
     local engine="$DEFAULT_ENGINE"
-    local model=""
+    local model="${CY_LLM_MODEL:-}" # 从环境变量读取默认值
     local adapter=""
     local daemon=false
 
@@ -366,7 +364,11 @@ cmd_lite() {
         esac
     done
 
+    # 确定最终使用的模型 (入参 > 环境变量 > 默认模型)
+    local target_model="${model:-$DEFAULT_MODEL}"
+
     step "⚡ 启动轻量版服务 (Gateway Lite + Coordinator Lite + Worker)"
+    info "Target Model: $target_model"
 
     local conda_cmd=$(get_conda)
     local python_path=$(get_python_path "$env_name")
@@ -388,12 +390,10 @@ cmd_lite() {
     fi
 
     export CY_LLM_ENGINE="$engine"
-    # Ensure default model is exported
-    if [[ -n "$model" ]]; then
-        export CY_LLM_DEFAULT_MODEL="$model"
-    else
-        export CY_LLM_DEFAULT_MODEL="$DEFAULT_MODEL"
-    fi
+    export CY_LLM_DEFAULT_MODEL="$target_model"
+    
+    # 设置模型注册表路径，确保 Worker 能读到模型配置
+    export CY_LLM_MODEL_REGISTRY_PATH="${CY_LLM_MODEL_REGISTRY_PATH:-$BACKEND_DIR/deploy/models.json}"
     
     if [[ -n "$adapter" ]]; then
         if [[ ! -d "$adapter" && -d "$TRAINING_DIR/checkpoints/$adapter" ]]; then
@@ -428,15 +428,17 @@ cmd_lite() {
     local gw_env=(
         "PYTHONPATH=$BACKEND_DIR"
         "COORDINATOR_GRPC_ADDR=127.0.0.1:${coordinator_port}"
+        "GATEWAY_REQUEST_TIMEOUT=300"
     )
+
+    # 准备 Worker 启动参数
+    local worker_args=("--port" "$worker_port" "--serve" "--model" "$target_model")
 
     if [[ "$daemon" == true ]]; then
         info "后台模式启动..."
-        (env "${coord_env[@]}" $conda_cmd run -n "$env_name" python -u -m coordinator_lite.app.server > "$coordinator_log" 2>&1 & echo $! > /tmp/cy-llm-lite-coordinator.pid)
-        (env "${gw_env[@]}" $conda_cmd run -n "$env_name" uvicorn gateway_lite.app.main:app --host 0.0.0.0 --port "$port" > "$gateway_log" 2>&1 & echo $! > /tmp/cy-llm-lite-gateway.pid)
-    # 启动 Worker (推理引擎)
-    # 注意: 我们主要通过环境变量传递模型路径，worker 默认使用 'default' 逻辑模型
-    ($conda_cmd run -n "$env_name" python -u "$WORKER_DIR/main.py" --port "$worker_port" --serve > "$worker_log" 2>&1 & echo $! > /tmp/cy-llm-lite-worker.pid)
+        (env "${coord_env[@]}" "$python_path" -u -m coordinator_lite.app.server > "$coordinator_log" 2>&1 & echo $! > /tmp/cy-llm-lite-coordinator.pid)
+        (env "${gw_env[@]}" "$python_path" -m uvicorn gateway_lite.app.main:app --host 0.0.0.0 --port "$port" > "$gateway_log" 2>&1 & echo $! > /tmp/cy-llm-lite-gateway.pid)
+        ("$python_path" -u -m worker.main "${worker_args[@]}" > "$worker_log" 2>&1 & echo $! > /tmp/cy-llm-lite-worker.pid)
 
         success "Coordinator PID: $(cat /tmp/cy-llm-lite-coordinator.pid)"
         success "Gateway PID: $(cat /tmp/cy-llm-lite-gateway.pid)"
@@ -451,23 +453,34 @@ cmd_lite() {
     info "正在启动组件..."
     export CY_LLM_HEALTH_PORT=$((worker_port + 1000)) # 避免 9090 冲突
 
-    env "${coord_env[@]}" $conda_cmd run -n "$env_name" python -u -m coordinator_lite.app.server > "$coordinator_log" 2>&1 &
+    env "${coord_env[@]}" "$python_path" -u -m coordinator_lite.app.server > "$coordinator_log" 2>&1 &
     local coord_pid=$!
     
-    $conda_cmd run -n "$env_name" python -u "$WORKER_DIR/main.py" --port "$worker_port" --serve > "$worker_log" 2>&1 &
+    "$python_path" -u -m worker.main "${worker_args[@]}" > "$worker_log" 2>&1 &
     local worker_pid=$!
 
     trap 'kill $coord_pid $worker_pid 2>/dev/null || true; exit' INT TERM EXIT
 
     # 等待 Worker 启动并输出就绪状态
-    info "正在等待本地推理引擎准备就绪 (由于 vLLM 初始化或模型下载，这可能需要一些时间)..."
+    info "正在等待本地推理引擎准备就绪..."
     local retry=0
-    local max_retries=180  # 增加超时时间到 3 分钟
+    local max_retries=600  # 增加到 10 分钟，给模型下载留出时间
     local ready=false
     while [[ $retry -lt $max_retries ]]; do
         if grep -q "Worker gRPC 服务已启动" "$worker_log" 2>/dev/null; then
             ready=true
             break
+        fi
+
+        # 核心改进：实时检测显存不足关键字并中止
+        if grep -qiE "显存不足|OutOfMemory|OOM|Insufficient VRAM" "$worker_log" 2>/dev/null; then
+            echo ""
+            error "检测到显存不足 (VRAM Insufficient)！"
+            warn "最近的错误详细信息:"
+            grep -iE "显存不足|OutOfMemory|OOM|Insufficient VRAM" "$worker_log" | tail -n 5 | sed 's/^/  /'
+            info "正在清理残留进程..."
+            cmd_stop
+            exit 1
         fi
         
         # 检查进程是否还在运行
@@ -476,7 +489,8 @@ cmd_lite() {
             error "Worker 进程已意外退出！"
             warn "最近的错误日志 ($worker_log):"
             tail -n 20 "$worker_log" | sed 's/^/  /'
-            kill $coord_pid 2>/dev/null || true
+            info "正在清理残留进程..."
+            cmd_stop
             exit 1
         fi
         if ! kill -0 $coord_pid 2>/dev/null; then
@@ -484,7 +498,8 @@ cmd_lite() {
             error "Coordinator 进程已意外退出！"
             warn "最近的错误日志 ($coordinator_log):"
             tail -n 20 "$coordinator_log" | sed 's/^/  /'
-            kill $worker_pid 2>/dev/null || true
+            info "正在清理残留进程..."
+            cmd_stop
             exit 1
         fi
 
@@ -497,8 +512,20 @@ cmd_lite() {
     if [[ "$ready" != true ]]; then
         error "Worker 启动超时 ($max_retries 秒)。"
         warn "请检查日志: $worker_log"
-        warn "提示: 如果是第一次启动，可能正在下载模型 (OPT-2.7B), 请耐心等待或手动检查网络。"
-        kill $coord_pid $worker_pid 2>/dev/null || true
+        
+        # 尝试输出最后几行日志以供参考
+        if [[ -s "$worker_log" ]]; then
+            warn "Worker 最后日志内容:"
+            tail -n 15 "$worker_log" | sed 's/^/  /'
+        else
+            warn "Worker 日志文件为空，进程可能尚未输出任何内容或环境启动过慢。"
+        fi
+
+        warn "提示: 如果是第一次启动，驱动或模型 (${model:-$DEFAULT_MODEL}) 可能正在初始化/下载，请手动检查网络或显存。"
+        
+        # 自动执行停止操作
+        info "超时，正在自动清理残留进程..."
+        cmd_stop
         exit 1
     fi
     
@@ -509,7 +536,7 @@ cmd_lite() {
     echo -e "你可以现在开始发送请求。按 ${CYAN}Ctrl+C${NC} 停止所有服务。\n"
 
     # 前台启动网关，方便直接看报错
-    env "${gw_env[@]}" $conda_cmd run -n "$env_name" uvicorn gateway_lite.app.main:app --host 0.0.0.0 --port "$port"
+    env "${gw_env[@]}" "$python_path" -m uvicorn gateway_lite.app.main:app --host 0.0.0.0 --port "$port"
 }
 
 # =============================================================================

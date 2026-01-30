@@ -1,6 +1,9 @@
+import json
 import os
 import time
 import uuid
+from functools import lru_cache
+from pathlib import Path
 from typing import List, Optional
 
 import grpc
@@ -11,6 +14,12 @@ from worker.proto_gen import ai_service_pb2, ai_service_pb2_grpc
 
 
 app = FastAPI(title="Gateway Lite", version="0.1.0")
+
+
+class GatewayLiteConfig(BaseModel):
+    api_token: str = ""
+    coordinator_grpc_addr: str = "127.0.0.1:50051"
+    request_timeout_sec: int = 60
 
 
 class ChatMessage(BaseModel):
@@ -28,6 +37,53 @@ class ChatCompletionRequest(BaseModel):
     repetition_penalty: Optional[float] = 1.0
 
 
+def _default_config_path() -> Path:
+    return Path(__file__).resolve().parents[1] / "config.json"
+
+
+@lru_cache(maxsize=1)
+def load_config() -> GatewayLiteConfig:
+    config_path = os.getenv("GATEWAY_LITE_CONFIG", "").strip()
+    path = Path(config_path) if config_path else _default_config_path()
+    if not path.exists():
+        return GatewayLiteConfig()
+
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            payload = json.load(f)
+        return GatewayLiteConfig(**payload)
+    except Exception as exc:
+        print(f"[GatewayLite] Failed to load config from {path}: {exc}")
+        return GatewayLiteConfig()
+
+
+def get_api_token() -> str:
+    env_token = os.getenv("GATEWAY_API_TOKEN", "").strip()
+    if env_token:
+        return env_token
+    return load_config().api_token.strip()
+
+
+def get_coordinator_addr() -> str:
+    env_addr = os.getenv("COORDINATOR_GRPC_ADDR", "").strip()
+    if env_addr:
+        return env_addr
+    cfg_addr = load_config().coordinator_grpc_addr.strip()
+    return cfg_addr or "127.0.0.1:50051"
+
+
+def get_request_timeout() -> Optional[float]:
+    env_timeout = os.getenv("GATEWAY_REQUEST_TIMEOUT", "").strip()
+    if env_timeout:
+        try:
+            value = float(env_timeout)
+            return value if value > 0 else None
+        except ValueError:
+            return None
+    cfg_timeout = load_config().request_timeout_sec
+    return float(cfg_timeout) if cfg_timeout and cfg_timeout > 0 else None
+
+
 def build_prompt(messages: List[ChatMessage]) -> str:
     lines = []
     for msg in messages:
@@ -36,7 +92,7 @@ def build_prompt(messages: List[ChatMessage]) -> str:
 
 
 def require_token(authorization: Optional[str]) -> None:
-    token = os.getenv("GATEWAY_API_TOKEN", "").strip()
+    token = get_api_token()
     if not token:
         return
     if not authorization or not authorization.startswith("Bearer "):
@@ -47,8 +103,9 @@ def require_token(authorization: Optional[str]) -> None:
 
 
 async def stream_predict(prompt: str, model_id: str, params: ChatCompletionRequest) -> str:
-    target = os.getenv("COORDINATOR_GRPC_ADDR", "127.0.0.1:50051")
+    target = get_coordinator_addr()
     trace_id = str(uuid.uuid4())
+    timeout = get_request_timeout()
 
     async def request_iter():
         yield ai_service_pb2.StreamPredictRequest(
@@ -67,7 +124,7 @@ async def stream_predict(prompt: str, model_id: str, params: ChatCompletionReque
         async with grpc.aio.insecure_channel(target) as channel:
             stub = ai_service_pb2_grpc.AiInferenceStub(channel)
             response_text = []
-            async for resp in stub.StreamPredict(request_iter()):
+            async for resp in stub.StreamPredict(request_iter(), timeout=timeout):
                 response_text.append(resp.chunk)
                 if resp.end_of_stream:
                     break

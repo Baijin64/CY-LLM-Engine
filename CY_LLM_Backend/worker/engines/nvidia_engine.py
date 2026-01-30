@@ -25,24 +25,46 @@ class NvidiaEngine(BaseEngine):
     def load_model(self, model_path: str, adapter_path: Optional[str] = None, **kwargs) -> None:
         """加载模型并根据需要应用 LoRA 适配器。"""
 
-        print(f"[NvidiaEngine] Loading base model: {model_path}...")
-
-        use_4bit = kwargs.pop("use_4bit", True)
-        device_map = kwargs.pop("device_map", "auto")
-        quantization_config = kwargs.pop("quantization_config", None)
-
-        if quantization_config is None and use_4bit and torch.cuda.is_available():
-            quantization_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_compute_dtype=torch.bfloat16,
-                bnb_4bit_use_double_quant=True,
-            )
-
         try:
+            # === 阶段 0: 模型路径预处理 (检测/下载) ===
+            try:
+                from worker.utils.model_manager import ModelManager, LoadMode
+                manager = ModelManager(
+                    engine_type="nvidia",
+                    stall_threshold_seconds=600.0,
+                )
+                # 这将触发本地检测或带进度条的下载
+                print(f"[NvidiaEngine] Preparing model: {model_path}...")
+                resolved_path, _ = manager.prepare_model(
+                    model_id=model_path,
+                    mode=LoadMode.CHECK_AND_LOAD,
+                )
+                model_path = str(resolved_path)
+            except Exception as e:
+                print(f"[NvidiaEngine] ModelManager scan skipped: {e}")
+
+            print(f"[NvidiaEngine] Stage 1/3: Initializing tokenizer...")
             self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
             if self.tokenizer.pad_token is None:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
+
+            # 兼容两种写法：use_4bit 或 quantization
+            use_4bit = kwargs.pop("use_4bit", True)
+            quantization = kwargs.pop("quantization", None)
+            if quantization == "bitsandbytes":
+                use_4bit = True
+
+            device_map = kwargs.pop("device_map", "auto")
+            quantization_config = kwargs.pop("quantization_config", None)
+
+            if quantization_config is None and use_4bit and torch.cuda.is_available():
+                print("[NvidiaEngine] Stage 1.1: Configuring 4-bit quantization (BNB)...")
+                quantization_config = BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_quant_type="nf4",
+                    bnb_4bit_compute_dtype=torch.bfloat16,
+                    bnb_4bit_use_double_quant=True,
+                )
 
             model_kwargs: Dict[str, Any] = {
                 "trust_remote_code": True,
@@ -58,21 +80,23 @@ class NvidiaEngine(BaseEngine):
                     model_kwargs["torch_dtype"] = torch.float32
                     model_kwargs["device_map"] = "cpu"
 
+            print(f"[NvidiaEngine] Stage 2/3: Loading model weights (this may take several minutes)...")
             self.model = AutoModelForCausalLM.from_pretrained(
                 model_path,
                 **model_kwargs,
             )
 
             if adapter_path:
-                print(f"[NvidiaEngine] Loading LoRA adapter: {adapter_path}...")
+                print(f"[NvidiaEngine] Stage 2.2: Applying LoRA adapter: {adapter_path}...")
                 self.model = PeftModel.from_pretrained(self.model, adapter_path)
 
+            print("[NvidiaEngine] Stage 3/3: Finalizing model setup...")
             self.model.eval()
             self.device = next(self.model.parameters()).device
-            print("[NvidiaEngine] Model loaded successfully.")
+            print("[NvidiaEngine] ✓ Model load complete. Ready for inference.")
 
         except Exception as e:
-            print(f"[NvidiaEngine] Error loading model: {e}")
+            print(f"[NvidiaEngine] ✗ Error loading model: {e}")
             raise e
 
     def infer(self, prompt: str, **kwargs) -> Generator[str, None, None]:

@@ -1,17 +1,79 @@
-import os
 import asyncio
+import json
+import os
+import threading
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import List, Optional
 
 import grpc
 
 from worker.proto_gen import ai_service_pb2, ai_service_pb2_grpc
 
 
+@dataclass
+class CoordinatorConfig:
+    workers: List[str] = field(default_factory=list)
+
+
+def _default_config_path() -> Path:
+    return Path(__file__).resolve().parents[1] / "config.json"
+
+
+def load_config() -> CoordinatorConfig:
+    config_path = os.getenv("COORDINATOR_CONFIG", "").strip()
+    path = Path(config_path) if config_path else _default_config_path()
+    if not path.exists():
+        return CoordinatorConfig()
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        workers = payload.get("workers") or []
+        if not isinstance(workers, list):
+            workers = []
+        workers = [str(item).strip() for item in workers if str(item).strip()]
+        return CoordinatorConfig(workers=workers)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[CoordinatorLite] Failed to load config from {path}: {exc}")
+        return CoordinatorConfig()
+
+
+def get_worker_addrs() -> List[str]:
+    env_multi = os.getenv("WORKER_GRPC_ADDRS", "").strip()
+    if env_multi:
+        parts = [item.strip() for item in env_multi.split(",") if item.strip()]
+        if parts:
+            return parts
+    env_single = os.getenv("WORKER_GRPC_ADDR", "").strip()
+    if env_single:
+        return [env_single]
+    cfg_workers = load_config().workers
+    if cfg_workers:
+        return cfg_workers
+    return ["127.0.0.1:50052"]
+
+
+class RoundRobinSelector:
+    def __init__(self, workers: List[str]):
+        self._workers = workers
+        self._index = 0
+        self._lock = threading.Lock()
+
+    def next(self) -> Optional[str]:
+        if not self._workers:
+            return None
+        with self._lock:
+            worker = self._workers[self._index % len(self._workers)]
+            self._index += 1
+            return worker
+
+
 class AiInferenceProxy(ai_service_pb2_grpc.AiInferenceServicer):
-    def __init__(self, worker_addr: str):
-        self.worker_addr = worker_addr
+    def __init__(self, worker_addrs: List[str]):
+        self.selector = RoundRobinSelector(worker_addrs)
 
     async def StreamPredict(self, request_iterator, context):
-        if not self.worker_addr:
+        worker_addr = self.selector.next()
+        if not worker_addr:
             trace_id = ""
             async for req in request_iterator:
                 if req.metadata and req.metadata.trace_id:
@@ -25,7 +87,7 @@ class AiInferenceProxy(ai_service_pb2_grpc.AiInferenceServicer):
             )
             return
 
-        async with grpc.aio.insecure_channel(self.worker_addr) as channel:
+        async with grpc.aio.insecure_channel(worker_addr) as channel:
             stub = ai_service_pb2_grpc.AiInferenceStub(channel)
 
             async def forward_requests():
@@ -36,33 +98,35 @@ class AiInferenceProxy(ai_service_pb2_grpc.AiInferenceServicer):
                 yield resp
 
     async def Control(self, request, context):
-        if not self.worker_addr:
+        worker_addr = self.selector.next()
+        if not worker_addr:
             return ai_service_pb2.ControlMessage(
                 trace_id=request.trace_id,
                 command="noop",
                 payload={"error": "worker_not_configured"},
             )
-        async with grpc.aio.insecure_channel(self.worker_addr) as channel:
+        async with grpc.aio.insecure_channel(worker_addr) as channel:
             stub = ai_service_pb2_grpc.AiInferenceStub(channel)
             return await stub.Control(request)
 
     async def Health(self, request, context):
-        if not self.worker_addr:
+        worker_addr = self.selector.next()
+        if not worker_addr:
             return ai_service_pb2.WorkerHealthResponse(
                 healthy=False,
                 metrics={"error": "worker_not_configured"},
             )
-        async with grpc.aio.insecure_channel(self.worker_addr) as channel:
+        async with grpc.aio.insecure_channel(worker_addr) as channel:
             stub = ai_service_pb2_grpc.AiInferenceStub(channel)
             return await stub.Health(request)
 
 
 async def serve():
     bind_addr = os.getenv("COORDINATOR_GRPC_BIND", "0.0.0.0:50051")
-    worker_addr = os.getenv("WORKER_GRPC_ADDR", "127.0.0.1:50052")
+    worker_addrs = get_worker_addrs()
 
     server = grpc.aio.server()
-    ai_service_pb2_grpc.add_AiInferenceServicer_to_server(AiInferenceProxy(worker_addr), server)
+    ai_service_pb2_grpc.add_AiInferenceServicer_to_server(AiInferenceProxy(worker_addrs), server)
     server.add_insecure_port(bind_addr)
 
     await server.start()

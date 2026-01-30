@@ -269,16 +269,51 @@ class ProgressTracker:
                 LOGGER.warning("进度回调失败: %s", e)
 
     def _stall_check_loop(self) -> None:
-        """停滞检测循环"""
+        """停滞检测循环：简单直接的超时检查"""
         while self._running:
             time.sleep(10)  # 每 10 秒检查一次
             with self._lock:
-                if self._current and self._current.is_stalled(self.stall_threshold):
+                if not self._current:
+                    continue
+                
+                # 检查是否超时
+                stall_duration = time.time() - self._current.last_update
+                
+                # 特殊处理下载阶段：如果文件正在变化，重置计时器
+                if self._current.stage == ModelStage.DOWNLOADING:
+                    try:
+                        # 识别模型 ID 并探测下载缓存目录
+                        id_part = self._current.message.split(': ')[-1].strip()
+                        search_paths = [
+                            Path.home() / ".cache" / "cy-llm" / "models" / id_part.replace("/", "--"),
+                            Path.home() / ".cache" / "huggingface" / "hub" / f"models--{id_part.replace('/', '--')}"
+                        ]
+                        for path in search_paths:
+                            if path.exists():
+                                current_size = sum(f.stat().st_size for f in path.rglob('*') if f.is_file())
+                                if hasattr(self, '_last_size') and current_size > self._last_size:
+                                    self._current.last_update = time.time()
+                                    stall_duration = 0.0
+                                self._last_size = current_size
+                                break
+                    except Exception:
+                        pass
+
+                # 执行强制中止
+                if stall_duration > self.stall_threshold:
                     if self.on_stall:
                         try:
                             self.on_stall(self._current)
-                        except Exception as e:
-                            LOGGER.warning("停滞回调失败: %s", e)
+                        except Exception:
+                            pass
+                    self._running = False
+                    break
+
+    def reset_stall_count(self) -> None:
+        """兼容性接口：重置状态快照"""
+        with self._lock:
+            if hasattr(self, '_last_size'):
+                delattr(self, '_last_size')
 
 
 # ============================================================================
@@ -368,16 +403,16 @@ class ModelDetector:
         if not path.exists() or not path.is_dir():
             return False
 
-        # 检查必要文件
-        required_any = [
-            "config.json",
+        # 检查必要权重文件 (必须包含至少一个权重文件，仅有 config.json 不够)
+        required_weights = [
             "model.safetensors",
             "model.safetensors.index.json",
             "pytorch_model.bin",
             "pytorch_model.bin.index.json",
+            "model.gguf",
         ]
         
-        for filename in required_any:
+        for filename in required_weights:
             if (path / filename).exists():
                 return True
 
@@ -477,56 +512,89 @@ class ModelDownloader:
         api = HfApi()
         try:
             repo_info = api.repo_info(model_id, revision=revision)
-            total_size = sum(
-                f.size for f in repo_info.siblings 
-                if f.size and self._is_model_file(f.rfilename)
-            )
-            LOGGER.info("模型总大小: %.2f GB", total_size / (1024**3))
+            # 某些版本的 hf_hub 返回的 siblings 可能没有 size，或者需要 files 参数
+            total_size = 0
+            if hasattr(repo_info, "siblings") and repo_info.siblings:
+                for f in repo_info.siblings:
+                    if self._is_model_file(f.rfilename):
+                        # 尝试获取 size，如果不存在则设为 0
+                        f_size = getattr(f, "size", 0) or 0
+                        total_size += f_size
+            
+            if total_size > 0:
+                LOGGER.info("模型权重总大小: %.2f GB", total_size / (1024**3))
+            else:
+                LOGGER.info("无法预估模型精细大小，将按文件数追踪进度")
         except Exception as e:
-            LOGGER.warning("无法获取模型大小: %s", e)
+            LOGGER.warning("无法获取模型信息: %s", e)
             total_size = 0
 
         progress_tracker = self.progress_tracker
 
         class _TrackerTqdm(hf_tqdm):
+            def __init__(self, *args, **kwargs):
+                # 禁用默认的 tqdm 文本输出，我们使用自己的 ProgressTracker 渲染
+                kwargs["disable"] = True 
+                super().__init__(*args, **kwargs)
+
             def update(self, n=1):  # type: ignore[override]
                 out = super().update(n)
                 if not progress_tracker:
                     return out
                 try:
-                    if self.total and self.total > 0:
-                        progress = (float(self.n) / float(self.total)) * 100.0
+                    current_n = float(self.n)
+                    total_n = float(self.total) if self.total else 0.0
+                    
+                    if total_n > 0:
+                        progress = (current_n / total_n) * 100.0
                     else:
                         progress = 0.0
 
                     speed = ""
                     eta = ""
-                    if getattr(self, "rate", None):
-                        speed = self._format_speed(float(self.rate))
-                    if getattr(self, "remaining", None) is not None:
-                        eta = self._format_eta(float(self.remaining))
+                    # 尝试从 tqdm 实例获取速率和剩余时间
+                    rate = getattr(self, "avg_rate", None) or getattr(self, "rate", None)
+                    if rate:
+                        speed = self._format_speed_internal(float(rate))
+                    
+                    remaining = getattr(self, "remaining", None)
+                    if remaining is not None:
+                        eta = self._format_eta_internal(float(remaining))
 
+                    msg = f"正在下载: {current_n:.0f}/{total_n:.0f}" if total_n > 0 else "正在下载..."
                     progress_tracker.update(
                         progress=min(99.9, max(0.0, progress)),
-                        message=f"下载中: {progress:.1f}%",
+                        message=msg,
                         speed=speed,
                         eta=eta,
                     )
                 except Exception:
-                    # 进度更新失败不应影响下载主流程
                     pass
                 return out
+
+            def _format_speed_internal(self, val):
+                if val < 1024: return f"{val:.0f} B/s"
+                if val < 1024**2: return f"{val/1024:.1f} KB/s"
+                return f"{val/1024**2:.1f} MB/s"
+
+            def _format_eta_internal(self, val):
+                if val < 60: return f"{val:.0f}s"
+                return f"{val/60:.1f}m"
 
         # 执行下载
         local_dir = self.cache_dir / model_id.replace("/", "--")
         
+        # 调试日志：检查环境变量
+        LOGGER.info("正在通过 %s 下载模型...", os.getenv("HF_ENDPOINT", "HuggingFace Official"))
+
         # 使用 snapshot_download 并配置进度
         result_path = snapshot_download(
             repo_id=model_id,
             revision=revision,
             local_dir=str(local_dir),
-            local_dir_use_symlinks=False,
+            token=os.getenv("HUGGING_FACE_HUB_TOKEN"),
             tqdm_class=_TrackerTqdm,
+            max_workers=4,  # 多线程加速
         )
 
         if self.progress_tracker:
@@ -1389,19 +1457,9 @@ class ModelManager:
             print()  # 换行
 
     def _on_stall(self, info: ProgressInfo) -> None:
-        """进度停滞回调"""
-        self._stall_count += 1
-        LOGGER.warning(
-            "⚠️ 进度停滞 [%d/%d]: %s (%.1f%%)",
-            self._stall_count,
-            self._max_stall_retries,
-            info.stage.value,
-            info.progress
-        )
-        
-        if self._stall_count >= self._max_stall_retries:
-            LOGGER.error("❌ 进度停滞超过 %d 次，中止操作", self._max_stall_retries)
-            raise TimeoutError("操作超时：进度停滞过久")
+        """停滞回调：抛出超时错误并停止"""
+        LOGGER.error(f"❌ 模型操作停滞于 [{info.stage.value}] 阶段，已超过限制时间，强制停止任务。")
+        raise TimeoutError(f"模型加载超时 ({self.stall_threshold}s)。")
 
     def _async_load(self, model_path: Path) -> None:
         """异步加载模型（后台线程）"""

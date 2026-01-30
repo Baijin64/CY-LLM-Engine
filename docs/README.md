@@ -186,8 +186,10 @@ curl http://localhost:8000/v1/chat/completions \
 ### Docker 部署 (Lite)
 
 ```bash
-# 说明: Lite Docker Compose 将在后续补充
-# 目前可使用 CLI 启动进行本地联调
+docker compose -f docker-compose.community.yml up -d
+
+# 查看状态
+docker compose -f docker-compose.community.yml ps
 ```
 
 ## 引擎选择指南

@@ -17,6 +17,10 @@ PROJECT_ROOT = os.path.dirname(WORKER_ROOT)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+# 初始化基本日志，确保导入过程中的信息能输出
+logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
+LOGGER = logging.getLogger("cy_llm.worker")
+
 from worker.config.config_loader import ModelSpec, WorkerConfig, load_worker_config  # type: ignore
 from worker.core.server import InferenceServer  # type: ignore
 from worker.core.task_scheduler import TaskScheduler  # type: ignore
@@ -25,9 +29,6 @@ from worker.engines.engine_factory import create_engine  # type: ignore
 from worker.utils.auth import enforce_internal_token_policy  # type: ignore
 from worker.utils.otel import init_tracing  # type: ignore
 from worker.health.health_server import start_health_server  # type: ignore
-
-
-LOGGER = logging.getLogger("cy_llm.worker")
 
 
 def parse_args() -> argparse.Namespace:
@@ -42,7 +43,6 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--model", default="default", help="逻辑模型 ID（参考模型注册表）")
     parser.add_argument("--prompt", help="若提供则直接运行一次推理并退出。")
     parser.add_argument("--list-models", action="store_true", help="列出当前可用模型映射。")
-    parser.add_argument("--preload-all", action="store_true", help="启动时预加载所有模型。")
     parser.add_argument("--registry", help="指定模型注册表 JSON 路径，默认读取环境变量。")
     parser.add_argument("--config", help="指定配置文件路径（兼容旧 API）。")
     parser.add_argument("--max-workers", type=int, default=2, help="调度线程数量。")
@@ -91,42 +91,13 @@ def _engine_kwargs(spec: ModelSpec) -> Optional[dict]:
     kwargs: dict = {}
     if spec.use_4bit is not None:
         kwargs["use_4bit"] = spec.use_4bit
+    if spec.quantization:
+        kwargs["quantization"] = spec.quantization
+    if spec.gpu_memory_utilization:
+        kwargs["gpu_memory_utilization"] = spec.gpu_memory_utilization
+    if spec.max_model_len:
+        kwargs["max_model_len"] = spec.max_model_len
     return kwargs or None
-
-
-def _preload_models(server: InferenceServer, config_or_models, names: Optional[Iterable[str]] = None) -> None:
-    import concurrent.futures
-
-    if isinstance(config_or_models, (list, tuple)):
-        models = config_or_models
-        if not models:
-            return
-        for model in models:
-            try:
-                model_id = model.get("id", "unknown")
-                model_path = model.get("path", "")
-                server.load_model(model_id, model_path)
-            except Exception as exc:
-                LOGGER.error("预加载模型失败: %s", exc)
-        return
-
-    config = config_or_models
-    names_list = list(names) if names else []
-    if not names_list:
-        return
-
-    def _load_one(name: str) -> None:
-        spec = _resolve_spec(config, name)
-        server.ensure_model(
-            model_id=name,
-            model_path=spec.model_path,
-            adapter_path=spec.adapter_path,
-            engine_type=spec.engine or config.preferred_backend,
-            engine_kwargs=_engine_kwargs(spec),
-        )
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(names_list))) as executor:
-        executor.map(_load_one, names_list)
 
 
 def setup_signal_handlers(stop_event: threading.Event) -> None:
@@ -173,7 +144,6 @@ def _serve_forever(server: InferenceServer, config: WorkerConfig, port: int = 50
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
     init_tracing("cy-llm-worker")
     args = _parse_args()
     enforce_internal_token_policy()
@@ -181,13 +151,10 @@ def main() -> None:
 
     if args.list_models:
         print(_format_registry(config))
-        if not args.prompt and not args.preload_all and not args.serve:
+        if not args.prompt and not args.serve:
             return
 
     inference_server = _build_server(args, config)
-
-    if args.preload_all:
-        _preload_models(inference_server, config, config.model_registry.keys())
 
     if args.prompt:
         spec = _resolve_spec(config, args.model)

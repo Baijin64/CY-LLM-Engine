@@ -95,6 +95,12 @@ class InferenceServer:
 		for attempt, overrides in enumerate(retry_plan, 1):
 			effective_kwargs = {**base_kwargs, **overrides}
 			try:
+				LOGGER.info(
+					"正在加载模型 %s (尝试 %d/%d)...",
+					model_id,
+					attempt,
+					attempts
+				)
 				engine.load_model(
 					model_path,
 					adapter_path,

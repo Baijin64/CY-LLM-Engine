@@ -1,0 +1,72 @@
+version: "3.8"
+
+services:
+  gateway-lite:
+    build:
+      context: .
+      dockerfile: CY_LLM_Backend/gateway_lite/Dockerfile.gateway.lite
+    image: cy-llm-gateway-lite:latest
+    restart: unless-stopped
+    ports:
+      - "${CY_LLM_LITE_PORT:-8000}:8000"
+    environment:
+      - COORDINATOR_GRPC_ADDR=coordinator-lite:50051
+      - GATEWAY_API_TOKEN=${GATEWAY_API_TOKEN:-}
+      - GATEWAY_REQUEST_TIMEOUT=${GATEWAY_REQUEST_TIMEOUT:-}
+    depends_on:
+      - coordinator-lite
+    networks:
+      - cy-llm-lite
+
+  coordinator-lite:
+    build:
+      context: .
+      dockerfile: CY_LLM_Backend/coordinator_lite/Dockerfile.coordinator.lite
+    image: cy-llm-coordinator-lite:latest
+    restart: unless-stopped
+    ports:
+      - "${CY_LLM_LITE_COORDINATOR_PORT:-50051}:50051"
+    environment:
+      - COORDINATOR_GRPC_BIND=0.0.0.0:50051
+      - WORKER_GRPC_ADDRS=worker:50052
+    depends_on:
+      - worker
+    networks:
+      - cy-llm-lite
+
+  worker:
+    build:
+      context: .
+      dockerfile: CY_LLM_Backend/deploy/Dockerfile.worker.nvidia
+    image: cy-llm-worker-lite:${CY_LLM_ENGINE:-cuda-vllm}
+    restart: unless-stopped
+    environment:
+      - CY_LLM_ENGINE=${CY_LLM_ENGINE:-cuda-vllm}
+      - CY_LLM_DEFAULT_MODEL=${CY_LLM_DEFAULT_MODEL:-facebook/opt-2.7b}
+      - CY_LLM_DEFAULT_ADAPTER=${CY_LLM_DEFAULT_ADAPTER:-}
+      - CY_LLM_MODEL_REGISTRY=
+      - CY_LLM_MODEL_REGISTRY_PATH=
+      - CY_LLM_INTERNAL_TOKEN=${CY_LLM_INTERNAL_TOKEN:-}
+      - CY_LLM_HEALTH_PORT=${CY_LLM_HEALTH_PORT:-19090}
+      - VLLM_TENSOR_PARALLEL_SIZE=${VLLM_TP:-1}
+      - VLLM_GPU_MEMORY_UTILIZATION=${VLLM_GPU_MEM:-0.85}
+    command: ["python3", "-m", "worker.main", "--serve", "--port", "50052"]
+    volumes:
+      - ${CY_LLM_MODEL_CACHE:-~/.cache/cy-llm/models}:/models
+      - ${CY_LLM_CHECKPOINT_DIR:-~/.cache/cy-llm/checkpoints}:/checkpoints
+    ports:
+      - "${CY_LLM_LITE_WORKER_PORT:-50052}:50052"
+      - "${CY_LLM_WORKER_METRICS_PORT:-19090}:19090"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks:
+      - cy-llm-lite
+
+networks:
+  cy-llm-lite:
+    driver: bridge
