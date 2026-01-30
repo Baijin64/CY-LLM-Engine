@@ -4,13 +4,13 @@
 *直接沿用现有的 `ai_service.proto` 作为组件间通信标准。*
 
 ## 1. 代码库重组 (Refactoring & Cleanup)
-- [ ] **剥离 Kotlin 组件 (Enterprise Move)**
-    - [ ] 将 `CY_LLM_Backend/gateway` (Kotlin) 移动到 `legacy_enterprise/gateway` 或归档文件夹。
-    - [ ] 将 `CY_LLM_Backend/coordinator` (Kotlin) 移动到 `legacy_enterprise/coordinator` 或归档文件夹。
-    - [ ] 更新根目录 `settings.gradle.kts` 移除上述模块引用。
-- [ ] **建立开源版目录结构**
-    - [ ] 创建 `CY_LLM_Backend/gateway_lite/` (Python/FastAPI)。
-    - [ ] 创建 `CY_LLM_Backend/coordinator_lite/` (Python)。
+- [x] **剥离 Kotlin 组件 (Enterprise Move)**
+    - [x] 将 `CY_LLM_Backend/gateway` (Kotlin) 移动到 `legacy_enterprise/gateway` 或归档文件夹。
+    - [x] 将 `CY_LLM_Backend/coordinator` (Kotlin) 移动到 `legacy_enterprise/coordinator` 或归档文件夹。
+    - [x] 更新根目录 `settings.gradle.kts` 移除上述模块引用。
+- [x] **建立开源版目录结构**
+    - [x] 创建 `CY_LLM_Backend/gateway_lite/` (Python/FastAPI)。
+    - [x] 创建 `CY_LLM_Backend/coordinator_lite/` (Python)。
 
 ## 2. 开源版网关开发 (Gateway Lite)
 *目标：轻量级 Python 网关，替换 Kotlin 网关，提供基础 API 转发。*

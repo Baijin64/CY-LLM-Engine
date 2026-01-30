@@ -45,62 +45,34 @@
 | **多引擎支持** | vLLM (CUDA/Ascend)、TensorRT-LLM、MindIE |
 | **多硬件平台** | NVIDIA GPU、华为 Ascend NPU |
 | **统一 CLI** | `./cy` / `./cy-llm` 一键部署和管理 |
-| **流式推理** | SSE 实时流式输出 |
-| **企业级网关** | Kotlin + Spring WebFlux 响应式架构 |
-| **弹性伸缩** | 支持多 Worker 实例负载均衡 |
+| **基础推理** | OpenAI 兼容非流式输出 |
+| **轻量化网关** | Python + FastAPI 轻量版 |
+| **弹性伸缩** | 轻量版可扩展多 Worker 实例 |
 | **完整训练** | LoRA/PEFT 微调支持 |
 | **显存优化** | VRAM 预估与 OOM 自动重试 |
 
 ---
 
-## 🚀 快速开始
-
-### 方式一：CLI 一键启动 (推荐)
+## 🚀 快速开始 (Community Lite)
 
 ```bash
-# 1. 初始化环境
+# 1. 初始化环境 (可复用已有 env)
 ./cy-llm setup --engine cuda-vllm
 
-# 2. 启动服务
-./cy-llm start --model qwen2.5-7b
+# 2. 安装 Lite 依赖
+conda run -n ${CY_LLM_CONDA_ENV:-vllm} pip install -r CY_LLM_Backend/gateway_lite/requirements.txt
+conda run -n ${CY_LLM_CONDA_ENV:-vllm} pip install -r CY_LLM_Backend/coordinator_lite/requirements.txt
 
-# 3. 验证部署
-curl http://localhost:8080/api/v1/health
+# 3. 一键启动 (Lite Gateway + Lite Coordinator + Worker)
+./cy-llm lite --engine cuda-vllm --model qwen2.5-7b
+
+# 4. 测试 (OpenAI 兼容)
+curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"qwen2.5-7b","messages":[{"role":"user","content":"你好"}]}'
 ```
 
-### 方式二：Docker 部署 (推荐生产)
-
-```bash
-# 配置环境变量
-cd CY_LLM_Backend/deploy
-cp .env.example .env
-vim .env
-
-# 启动服务
-docker compose up -d
-```
-
-### 方式三：手动启动
-
-```bash
-# 1. 启动 Redis
-docker run -d --name redis -p 6379:6379 redis:7-alpine
-
-# 2. 启动 Coordinator (Java 21)
-cd CY_LLM_Backend/coordinator
-./gradlew bootRun
-
-# 3. 启动 Worker (Python)
-cd CY_LLM_Backend/worker
-source .venv/bin/activate
-python -m worker.main --serve --port 50051
-
-# 4. 启动 Gateway (Java 21)
-cd CY_LLM_Backend/gateway
-./gradlew bootRun
-```
-
-服务将在 `http://localhost:8080` 启动。
+> Lite 版本默认端口为 8000（Gateway），Coordinator 为 50051，Worker 为 50052。
 
 ---
 
@@ -115,16 +87,16 @@ cd CY_LLM_Backend/gateway
 
 ```bash
 # 使用 vLLM (默认)
-./cy-llm start --engine cuda-vllm
+./cy-llm lite --engine cuda-vllm
 
 # 使用 TensorRT-LLM
-./cy-llm start --engine cuda-trt
+./cy-llm lite --engine cuda-trt
 
 # 使用华为 Ascend vLLM
-./cy-llm start --engine ascend-vllm
+./cy-llm lite --engine ascend-vllm
 
 # 使用华为 Ascend MindIE
-./cy-llm start --engine ascend-mindie
+./cy-llm lite --engine ascend-mindie
 ```
 
 ---
@@ -135,12 +107,12 @@ cd CY_LLM_Backend/gateway
 ./cy-llm <command> [options]
 
 Commands:
-  setup       初始化环境 (Conda + 依赖 + Gateway)
-  start       启动完整服务 (Gateway + Worker)
+  setup       初始化环境 (Conda + 依赖)
+  lite        启动轻量版服务 (Gateway Lite + Coordinator Lite + Worker)
   worker      仅启动 Worker
   stop        停止所有服务
   status      查看服务状态
-  docker      Docker Compose 部署
+  docker      Docker Compose 部署 (后续补充 Lite)
   test        运行测试
   models      模型管理
   convert-trt 转换模型为 TensorRT-LLM 引擎
@@ -152,14 +124,12 @@ Commands:
 Options:
   --engine TYPE     推理引擎 (cuda-vllm/cuda-trt/ascend-vllm/ascend-mindie)
   --model ID        模型 ID
-  --port PORT       Gateway 端口 (默认: 8080)
+  --port PORT       Lite Gateway 端口 (默认: 8000)
   -d, --daemon      后台运行
 
 Examples:
   ./cy-llm setup --engine cuda-vllm       # 初始化
-  ./cy start --model qwen2.5-72b          # 启动指定模型
-  ./cy-llm start -d                       # 后台启动
-  ./cy-llm docker up --scale 2            # Docker 双 Worker
+  ./cy-llm lite --engine cuda-vllm --model qwen2.5-7b  # Lite 一键启动
   ./cy-llm status                         # 查看状态
   ./cy-llm convert-trt --model Qwen/Qwen2.5-7B --output /models/trt  # 转换 TRT 模型
   ./cy-llm prepare --raw /data/raw --out /data/train.jsonl           # 预处理数据
@@ -169,34 +139,14 @@ Examples:
 
 ---
 
-## 🛠 推理接口示例
+## 🛠 推理接口示例 (Lite)
 
-### 流式推理 (SSE)
-
-```bash
-curl -N -X POST http://localhost:8080/api/v1/inference/stream \
-  -H "Content-Type: application/json" \
-  -d '{"modelId": "qwen2.5-7b", "prompt": "请描述一下未来 AI 的样子"}'
-```
-
-### 非流式推理
+### 非流式推理 (OpenAI 兼容)
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/inference \
+curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"modelId": "qwen2.5-7b", "prompt": "你好，请介绍一下自己"}'
-```
-
-### 训练接口
-
-```bash
-curl -X POST http://localhost:8080/api/v1/training/start \
-  -H "Content-Type: application/json" \
-  -d '{
-    "baseModel": "deepseek-ai/deepseek-llm-7b-chat",
-    "outputDir": "/checkpoints/my_lora",
-    "datasetPath": "/data/train.json"
-  }'
+  -d '{"model":"qwen2.5-7b","messages":[{"role":"user","content":"你好，请介绍一下自己"}]}'
 ```
 
 ---
@@ -204,43 +154,40 @@ curl -X POST http://localhost:8080/api/v1/training/start \
 ## 🧪 测试
 
 ```bash
-# 运行集成测试
-./cy-llm test integration
-
-# 运行单元测试
-./cy-llm test unit
-
+ # 运行集成测试 (默认运行核心集成测试)
+ ./cy-llm test integration
+ 
++# 运行特定集成测试 (例如: engine, memory, scheduler, stream, telemetry, all)
++./cy-llm test integration all
++
 # 运行所有测试
 ./cy-llm test all
 ```
 
 ---
 
-## 🏗 系统架构
+## 🏗 系统架构 (Lite)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                         Client                                   │
 │                  (Browser / API Client)                         │
 └────────────────────────────┬────────────────────────────────────┘
-                             │ HTTP / SSE / WebSocket
+                             │ HTTP
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    Gateway (Kotlin)                              │
-│              Spring WebFlux + gRPC Client                        │
-│  端口: 8080                                                      │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │ gRPC (:50050)
-                            ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                   Coordinator (Kotlin)                           │
-│              Spring Boot + Redis + gRPC Server                   │
-│  端口: 50050                                                     │
-│  • TaskQueueService (Redis ZSET 优先级队列)                     │
-│  • PromptCacheService (Redis TTL 缓存)                          │
-│  • WorkerPoolManager (健康检查 + 负载均衡)                      │
+│                 Gateway Lite (Python)                            │
+│               FastAPI + gRPC Client                              │
+│  端口: 8000                                                      │
 └───────────────────────────┬─────────────────────────────────────┘
                             │ gRPC (:50051)
+                            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│               Coordinator Lite (Python)                          │
+│                 gRPC Proxy + 简化调度                            │
+│  端口: 50051                                                     │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │ gRPC (:50052)
           ┌─────────────────┴─────────────────┐
           ▼                                   ▼
 ┌─────────────────────────┐     ┌─────────────────────────┐
@@ -259,9 +206,8 @@ curl -X POST http://localhost:8080/api/v1/training/start \
           └─────────────────┬─────────────────┘
                             ▼
                     ┌───────────────────┐
-                    │      Redis        │
-                    │   (任务队列+缓存)  │
-                    │      :6379        │
+                    │   (可选) Redis    │
+                    │   (后续扩展)      │
                     └───────────────────┘
 ```
 
@@ -276,8 +222,8 @@ CY-LLM-Engine/
 ├── cy                           # 主 CLI 工具 (Shell 脚本)
 ├── cy-llm                       # CLI 别名
 ├── CY_LLM_Backend/
-│   ├── gateway/                # Kotlin Gateway 服务 (Spring WebFlux)
-│   ├── coordinator/            # Kotlin Coordinator 服务 (Spring Boot)
+|   ├── gateway_lite/           # Python Gateway Lite (FastAPI)
+|   ├── coordinator_lite/       # Python Coordinator Lite (gRPC Proxy)
 │   ├── worker/                 # Python Worker 服务
 │   │   ├── main.py             # 入口点
 │   │   ├── core/               # 核心组件 (server, scheduler, memory, telemetry)
@@ -315,10 +261,9 @@ CY-LLM-Engine/
 | 组件 | 最低版本 | 推荐版本 |
 |------|----------|----------|
 | Python | 3.10+ | 3.11 |
-| Java | 21+ | 21 (LTS) |
 | CUDA | 12.0 | 12.4 |
 | CANN | 8.0+ | 8.0.RC1 |
-| Redis | 7.0 | 7.2 |
+| Redis | 可选 | 可选 |
 | Docker | 24.0 | 25.0 |
 
 ---

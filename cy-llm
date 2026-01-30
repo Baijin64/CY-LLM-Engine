@@ -29,8 +29,11 @@ DEFAULT_ENV_NAME="${CY_LLM_CONDA_ENV:-vllm}"
 DEFAULT_PYTHON_VERSION="${CY_LLM_PYTHON_VERSION:-3.10}"
 DEFAULT_PORT="${CY_LLM_PORT:-8080}"
 DEFAULT_WORKER_PORT="${CY_LLM_WORKER_PORT:-50051}"
+DEFAULT_LITE_PORT="${CY_LLM_LITE_PORT:-8000}"
+DEFAULT_LITE_COORDINATOR_PORT="${CY_LLM_LITE_COORDINATOR_PORT:-50051}"
+DEFAULT_LITE_WORKER_PORT="${CY_LLM_LITE_WORKER_PORT:-50052}"
 DEFAULT_ENGINE="${CY_LLM_ENGINE:-cuda-vllm}"
-DEFAULT_MODEL="${CY_LL_MODEL:-facebook/opt-2.7b}"
+DEFAULT_MODEL="${CY_LLM_MODEL:-facebook/opt-2.7b}"
 DEFAULT_CHARACTER="${CY_LLM_CHARACTER:-芙宁娜}"
 DEFAULT_BATCH_SIZE="${CY_LLM_BATCH_SIZE:-2}"
 DEFAULT_GRAD_ACCUM="${CY_LLM_GRAD_ACCUM:-8}"
@@ -337,6 +340,179 @@ cmd_worker() {
 }
 
 # =============================================================================
+# 命令: lite - 启动轻量版服务 (Gateway Lite + Coordinator Lite + Worker)
+# =============================================================================
+cmd_lite() {
+    local env_name="$DEFAULT_ENV_NAME"
+    local port="$DEFAULT_LITE_PORT"
+    local coordinator_port="$DEFAULT_LITE_COORDINATOR_PORT"
+    local worker_port="$DEFAULT_LITE_WORKER_PORT"
+    local engine="$DEFAULT_ENGINE"
+    local model=""
+    local adapter=""
+    local daemon=false
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --env)      env_name="$2"; shift 2 ;;
+            --port)     port="$2"; shift 2 ;;
+            --coordinator-port) coordinator_port="$2"; shift 2 ;;
+            --worker-port) worker_port="$2"; shift 2 ;;
+            --engine)   engine="$2"; shift 2 ;;
+            --model)    model="$2"; shift 2 ;;
+            --adapter|--checkpoint) adapter="$2"; shift 2 ;;
+            -d|--daemon) daemon=true; shift ;;
+            *) shift ;;
+        esac
+    done
+
+    step "⚡ 启动轻量版服务 (Gateway Lite + Coordinator Lite + Worker)"
+
+    local conda_cmd=$(get_conda)
+    local python_path=$(get_python_path "$env_name")
+    if [[ -z "$python_path" ]]; then
+        error "环境 '$env_name' 未找到，请先运行: ./cy-llm setup"
+        exit 1
+    fi
+
+    info "Engine: $engine"
+    info "Gateway Lite Port: $port"
+    info "Coordinator Port: $coordinator_port"
+    info "Worker Port: $worker_port"
+    info "Python: $python_path"
+
+    # 检查并尝试安装 Lite 依赖
+    if ! $conda_cmd run -n "$env_name" python -c "import fastapi, uvicorn" &>/dev/null; then
+        warn "检测到缺少 Lite 依赖，正在尝试安装..."
+        $conda_cmd run -n "$env_name" pip install -r "$BACKEND_DIR/gateway_lite/requirements.txt" -r "$BACKEND_DIR/coordinator_lite/requirements.txt"
+    fi
+
+    export CY_LLM_ENGINE="$engine"
+    # Ensure default model is exported
+    if [[ -n "$model" ]]; then
+        export CY_LLM_DEFAULT_MODEL="$model"
+    else
+        export CY_LLM_DEFAULT_MODEL="$DEFAULT_MODEL"
+    fi
+    
+    if [[ -n "$adapter" ]]; then
+        if [[ ! -d "$adapter" && -d "$TRAINING_DIR/checkpoints/$adapter" ]]; then
+            adapter="$TRAINING_DIR/checkpoints/$adapter"
+        fi
+        
+        # 如果是一个目录，尝试查找最新的 checkpoint-xxx 子目录
+        if [[ -d "$adapter" ]]; then
+            local latest=$(ls -d "$adapter"/checkpoint-* 2>/dev/null | sort -V | tail -n 1)
+            if [[ -n "$latest" ]]; then
+                adapter="$latest"
+                info "自动定位最新训练节点: $adapter"
+            else
+                info "使用 Checkpoint 目录: $adapter"
+            fi
+        fi
+        export CY_LLM_DEFAULT_ADAPTER="$adapter"
+    fi
+    
+    export PYTHONPATH="$BACKEND_DIR"
+
+    local coordinator_log="/tmp/cy-llm-lite-coordinator.log"
+    local gateway_log="/tmp/cy-llm-lite-gateway.log"
+    local worker_log="/tmp/cy-llm-lite-worker.log"
+
+    local coord_env=(
+        "PYTHONPATH=$BACKEND_DIR"
+        "COORDINATOR_GRPC_BIND=0.0.0.0:${coordinator_port}"
+        "WORKER_GRPC_ADDR=127.0.0.1:${worker_port}"
+    )
+
+    local gw_env=(
+        "PYTHONPATH=$BACKEND_DIR"
+        "COORDINATOR_GRPC_ADDR=127.0.0.1:${coordinator_port}"
+    )
+
+    if [[ "$daemon" == true ]]; then
+        info "后台模式启动..."
+        (env "${coord_env[@]}" $conda_cmd run -n "$env_name" python -u -m coordinator_lite.app.server > "$coordinator_log" 2>&1 & echo $! > /tmp/cy-llm-lite-coordinator.pid)
+        (env "${gw_env[@]}" $conda_cmd run -n "$env_name" uvicorn gateway_lite.app.main:app --host 0.0.0.0 --port "$port" > "$gateway_log" 2>&1 & echo $! > /tmp/cy-llm-lite-gateway.pid)
+    # 启动 Worker (推理引擎)
+    # 注意: 我们主要通过环境变量传递模型路径，worker 默认使用 'default' 逻辑模型
+    ($conda_cmd run -n "$env_name" python -u "$WORKER_DIR/main.py" --port "$worker_port" --serve > "$worker_log" 2>&1 & echo $! > /tmp/cy-llm-lite-worker.pid)
+
+        success "Coordinator PID: $(cat /tmp/cy-llm-lite-coordinator.pid)"
+        success "Gateway PID: $(cat /tmp/cy-llm-lite-gateway.pid)"
+        success "Worker PID: $(cat /tmp/cy-llm-lite-worker.pid)"
+        return
+    fi
+
+    info "前台模式启动 (Ctrl+C 退出)"
+    info "监控日志可通过 tail -f $gateway_log 查看"
+    
+    # 显式启动背景进程并捕获错误
+    info "正在启动组件..."
+    export CY_LLM_HEALTH_PORT=$((worker_port + 1000)) # 避免 9090 冲突
+
+    env "${coord_env[@]}" $conda_cmd run -n "$env_name" python -u -m coordinator_lite.app.server > "$coordinator_log" 2>&1 &
+    local coord_pid=$!
+    
+    $conda_cmd run -n "$env_name" python -u "$WORKER_DIR/main.py" --port "$worker_port" --serve > "$worker_log" 2>&1 &
+    local worker_pid=$!
+
+    trap 'kill $coord_pid $worker_pid 2>/dev/null || true; exit' INT TERM EXIT
+
+    # 等待 Worker 启动并输出就绪状态
+    info "正在等待本地推理引擎准备就绪 (由于 vLLM 初始化或模型下载，这可能需要一些时间)..."
+    local retry=0
+    local max_retries=180  # 增加超时时间到 3 分钟
+    local ready=false
+    while [[ $retry -lt $max_retries ]]; do
+        if grep -q "Worker gRPC 服务已启动" "$worker_log" 2>/dev/null; then
+            ready=true
+            break
+        fi
+        
+        # 检查进程是否还在运行
+        if ! kill -0 $worker_pid 2>/dev/null; then
+            echo ""
+            error "Worker 进程已意外退出！"
+            warn "最近的错误日志 ($worker_log):"
+            tail -n 20 "$worker_log" | sed 's/^/  /'
+            kill $coord_pid 2>/dev/null || true
+            exit 1
+        fi
+        if ! kill -0 $coord_pid 2>/dev/null; then
+            echo ""
+            error "Coordinator 进程已意外退出！"
+            warn "最近的错误日志 ($coordinator_log):"
+            tail -n 20 "$coordinator_log" | sed 's/^/  /'
+            kill $worker_pid 2>/dev/null || true
+            exit 1
+        fi
+
+        sleep 1
+        retry=$((retry + 1))
+        echo -n "."
+    done
+    echo ""
+    
+    if [[ "$ready" != true ]]; then
+        error "Worker 启动超时 ($max_retries 秒)。"
+        warn "请检查日志: $worker_log"
+        warn "提示: 如果是第一次启动，可能正在下载模型 (OPT-2.7B), 请耐心等待或手动检查网络。"
+        kill $coord_pid $worker_pid 2>/dev/null || true
+        exit 1
+    fi
+    
+    success "🚀 所有组件已就绪！"
+    success "  - Gateway: http://0.0.0.0:$port (OpenAI API)"
+    success "  - Coordinator: $coordinator_port (gRPC)"
+    success "  - Worker: $worker_port (gRPC)"
+    echo -e "你可以现在开始发送请求。按 ${CYAN}Ctrl+C${NC} 停止所有服务。\n"
+
+    # 前台启动网关，方便直接看报错
+    env "${gw_env[@]}" $conda_cmd run -n "$env_name" uvicorn gateway_lite.app.main:app --host 0.0.0.0 --port "$port"
+}
+
+# =============================================================================
 # 命令: docker - Docker Compose 部署
 # =============================================================================
 cmd_docker() {
@@ -410,8 +586,14 @@ cmd_stop() {
     fi
     
     # 查找并停止所有相关进程
-    pkill -f "gateway-.*-SNAPSHOT.jar" 2>/dev/null && info "Gateway 进程已停止" || true
+    pkill -f "gateway-.*-SNAPSHOT.jar" 2>/dev/null && info "Legacy Gateway 进程已停止" || true
     pkill -f "worker/main.py" 2>/dev/null && info "Worker 进程已停止" || true
+    pkill -f "coordinator_lite.app.server" 2>/dev/null && info "Coordinator Lite 进程已停止" || true
+    pkill -f "gateway_lite.app.main" 2>/dev/null && info "Gateway Lite 进程已停止" || true
+    pkill -f "uvicorn.*gateway_lite" 2>/dev/null && info "Uvicorn Gateway 进程已停止" || true
+
+    # 清理 PID 文件
+    rm -f /tmp/cy-llm-lite-*.pid
     
     success "服务已停止"
 }
@@ -575,6 +757,8 @@ PY
 cmd_test() {
     local env_name="$DEFAULT_ENV_NAME"
     local type="${1:-all}"
+    shift || true
+    local sub_test="$1"
     
     step "🧪 运行测试"
     
@@ -582,8 +766,14 @@ cmd_test() {
     
     case "$type" in
         integration|int)
-            info "运行集成测试..."
-            $conda_cmd run -n "$env_name" python "$BACKEND_DIR/tests/test_integration.py"
+            if [[ -n "$sub_test" ]]; then
+                info "运行指定集成测试: $sub_test..."
+                $conda_cmd run -n "$env_name" python -u "$BACKEND_DIR/tests/test_integration.py" --test "$sub_test"
+            else
+                info "运行集成测试 (默认: integration)..."
+                # 如果没有子测试名，默认运行名为 integration 的核心测试，以避免交互失败
+                $conda_cmd run -n "$env_name" python -u "$BACKEND_DIR/tests/test_integration.py" --test integration
+            fi
             ;;
         unit)
             info "运行单元测试..."
@@ -949,6 +1139,7 @@ CY-LLM Engine - 统一部署命令行工具
 命令:
   setup       初始化环境 (Conda + 依赖 + Gateway 构建)
   start       启动完整服务 (Gateway + Worker)
+    lite        启动轻量版服务 (Gateway Lite + Coordinator Lite + Worker)
   worker      仅启动 Worker
   stop        停止所有服务
   status      查看服务状态
@@ -996,6 +1187,9 @@ CY-LLM Engine - 统一部署命令行工具
   # 启动服务
   ./cy-llm start --engine cuda-vllm --model deepseek-v3
 
+    # 启动轻量版服务 (开源版 Lite)
+    ./cy-llm lite --engine cuda-vllm --model deepseek-v3
+
   # 后台启动
   ./cy-llm start -d
 
@@ -1019,6 +1213,9 @@ CY-LLM Engine - 统一部署命令行工具
     CY_LLM_CONDA_ENV       默认 Conda 环境名
     CY_LLM_PORT            默认 Gateway 端口
     CY_LLM_WORKER_PORT     默认 Worker 端口
+    CY_LLM_LITE_PORT        Lite Gateway 端口
+    CY_LLM_LITE_COORDINATOR_PORT  Lite Coordinator 端口
+    CY_LLM_LITE_WORKER_PORT       Lite Worker 端口
 
 更多信息: https://github.com/your-repo/CY-LLM-Engine
 EOF
@@ -1034,6 +1231,7 @@ main() {
     case "$command" in
         setup)      cmd_setup "$@" ;;
         start)      cmd_start "$@" ;;
+        lite)       cmd_lite "$@" ;;
         worker)     cmd_worker "$@" ;;
         docker)     cmd_docker "$@" ;;
         stop)       cmd_stop "$@" ;;

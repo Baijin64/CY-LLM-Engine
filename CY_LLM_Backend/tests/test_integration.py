@@ -1,5 +1,15 @@
 """测试入口脚本：提供多种本地测试选项。"""
 
+import os
+import sys
+
+# 自动设置 Hugging Face 镜像（如果在中国环境下且未设置）
+if not os.environ.get("HF_ENDPOINT") and not os.environ.get("HF_HUB_OFFLINE"):
+    print("[INFO] 未检测到 HF_ENDPOINT，自动设置为 https://hf-mirror.com 以加快模型下载。", file=sys.stderr)
+    os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+
+print("[DEBUG] 正在初始化测试脚本...", file=sys.stderr, flush=True)
+
 import argparse
 import os
 import sys
@@ -20,6 +30,15 @@ from worker.core.telemetry import Telemetry
 from worker.utils.stream_buffer import BufferClosed, StreamBuffer
 
 
+def safe_input(prompt: str, default: str = "") -> str:
+    """安全的 input 函数，在非交互环境下返回默认值。"""
+    try:
+        return input(prompt).strip() or default
+    except EOFError:
+        print(f"(非交互环境，使用默认值: {default})")
+        return default
+
+
 def _reset_manager(manager: GPUMemoryManager) -> None:
     """清空单例内的状态，避免不同测试之间互相影响。"""
     manager.loaded_models.clear()
@@ -31,13 +50,17 @@ def run_engine_smoke_test() -> None:
     """仅针对 NvidiaEngine 进行快速加载与推理冒烟测试。"""
 
     print("=== [1] NvidiaEngine 冒烟测试 ===")
+    print("[DEBUG] 正在获取模型路径...")
     default_model = os.environ.get("BACKEND_TEST_MODEL", "sshleifer/tiny-gpt2")
-    model_path = input(f"基础模型 ID [默认 {default_model}]: ").strip() or default_model
-    adapter_path = input("LoRA 适配器路径（可选，留空跳过）: ").strip() or None
-    prompt = input("测试 Prompt [默认: 你好，你是谁？]: ").strip() or "你好，你是谁？"
+    model_path = safe_input(f"基础模型 ID [默认 {default_model}]: ", default_model)
+    adapter_path = safe_input("LoRA 适配器路径（可选，留空跳过）: ") or None
+    prompt = safe_input("测试 Prompt [默认: 你好，你是谁？]: ", "你好，你是谁？")
 
+    print(f"[DEBUG] 准备实例化 NvidiaEngine, 使用模型: {model_path}")
     engine = NvidiaEngine()
+    print("[DEBUG] NvidiaEngine 实例化完成")
     try:
+        print("[DEBUG] 开始执行 engine.load_model...")
         engine.load_model(model_path, adapter_path=adapter_path if adapter_path else None, use_4bit=torch.cuda.is_available())
     except Exception as exc:
         print(f"[SmokeTest] 模型加载失败: {exc}")
@@ -154,13 +177,13 @@ def run_integration_test() -> None:
     manager = GPUMemoryManager()
     _reset_manager(manager)
 
-    base_model_default = "deepseek-ai/deepseek-llm-7b-chat"
-    base_model_path = input(f"基础模型 ID [默认 {base_model_default}]: ").strip() or base_model_default
+    base_model_default = os.environ.get("BACKEND_TEST_MODEL", "deepseek-ai/deepseek-llm-7b-chat")
+    base_model_path = safe_input(f"基础模型 ID [默认 {base_model_default}]: ", base_model_default)
 
     adapter_root_default = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "../../CY_LLM_Training/checkpoints/furina_lora_v2")
     )
-    adapter_root = input(f"LoRA 根目录 [默认 {adapter_root_default}]: ").strip() or adapter_root_default
+    adapter_root = safe_input(f"LoRA 根目录 [默认 {adapter_root_default}]: ", adapter_root_default)
 
     model_id = os.path.basename(adapter_root) or "integration_model"
 
@@ -187,7 +210,7 @@ def run_integration_test() -> None:
         print(f"[Integration] 模型加载失败: {exc}")
         return
 
-    prompt = input("推理 Prompt [默认: 你好，请介绍一下你自己。]: ").strip() or "你好，请介绍一下你自己。"
+    prompt = safe_input("推理 Prompt [默认: 你好，请介绍一下你自己。]: ", "你好，请介绍一下你自己。")
     print("Response: ", end="")
     try:
         for chunk in engine.infer(prompt, max_new_tokens=50):
@@ -278,11 +301,16 @@ def main() -> None:
     }
 
     parser = argparse.ArgumentParser(description="CY-LLM Engine 测试入口")
-    parser.add_argument("--test", choices=choices.keys(), help="直接运行指定测试，无需交互菜单")
+    parser.add_argument("--test", choices=list(choices.keys()) + ["all"], help="直接运行指定测试，无需交互菜单")
     args = parser.parse_args()
 
     if args.test:
-        choices[args.test]()
+        if args.test == "all":
+            for name, test_fn in choices.items():
+                print(f"\n--- 正在运行: {name} ---")
+                test_fn()
+        else:
+            choices[args.test]()
         return
 
     menu_mapping = {
@@ -302,12 +330,24 @@ def main() -> None:
         print("  [4] 集成测试 (NvidiaEngine + MemoryManager)")
         print("  [5] StreamBuffer 流控测试")
         print("  [6] Telemetry 指标测试")
+        print("  [a] 运行全部测试")
         print("  [q] 退出")
 
-        choice = input("请输入选项: ").strip().lower()
-        if choice in {"q", "quit", "exit"}:
-            print("已退出测试脚本。")
+        choice = safe_input("请输入选项: ")
+
+        if choice in {"q", "quit", "exit", ""}:
+            if choice == "":
+                # EOF resulted in empty string from safe_input, we should exit the loop to avoid infinite loop
+                print("\n检测到非交互式环境或空输入，正在退出菜单。")
+            else:
+                print("已退出测试脚本。")
             break
+
+        if choice == "a":
+            for name, test_fn in choices.items():
+                print(f"\n--- 正在运行: {name} ---")
+                test_fn()
+            continue
 
         key = menu_mapping.get(choice, choice)
         test_fn = choices.get(key)

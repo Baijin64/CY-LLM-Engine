@@ -13,8 +13,8 @@ CY-LLM Engine 是一个统一的大语言模型推理和训练后端系统，支
 | **多引擎支持** | vLLM (CUDA/Ascend)、TensorRT-LLM、MindIE |
 | **多硬件平台** | NVIDIA GPU、华为 Ascend NPU |
 | **统一 CLI** | `./cy` / `./cy-llm` 一键部署和管理 |
-| **流式推理** | SSE 实时流式输出 |
-| **弹性伸缩** | 支持多 Worker 实例负载均衡 |
+| **基础推理** | OpenAI 兼容非流式输出 |
+| **弹性伸缩** | 轻量版可扩展多 Worker 实例 |
 | **完整训练** | LoRA/PEFT 微调支持 |
 
 ## 技术栈
@@ -29,14 +29,13 @@ CY-LLM Engine 是一个统一的大语言模型推理和训练后端系统，支
 | 配置管理 | Pydantic, YAML |
 | 测试 | pytest, pytest-asyncio |
 
-### 网关 (Kotlin)
+### 网关 (Lite / Python)
 
 | 组件 | 技术/框架 |
 |------|----------|
-| 框架 | Spring Boot 3, WebFlux |
-| 通信 | gRPC Client, Reactor |
-| 缓存 | Redis (Lettuce) |
-| 指标 | Micrometer, Prometheus |
+| 框架 | FastAPI |
+| 通信 | grpcio (gRPC Client) |
+| 模型接口 | OpenAI 兼容接口 |
 
 ## 系统架构
 
@@ -45,32 +44,27 @@ CY-LLM Engine 是一个统一的大语言模型推理和训练后端系统，支
 │                         Client                                   │
 │                  (Browser / API Client)                         │
 └────────────────────────────┬────────────────────────────────────┘
-                             │ HTTP / SSE / WebSocket
+                             │ HTTP
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    Gateway (Kotlin)                              │
-│              Spring WebFlux + gRPC Client                        │
+│                 Gateway Lite (Python)                            │
+│               FastAPI + gRPC Client                              │
 │  ┌─────────────────────────────────────────────────────────┐    │
-│  │ • InferenceService (路由 + Resilience4j)                 │    │
-│  │ • TrainingService                                       │    │
-│  │ • ModelRegistry                                         │    │
-│  │ • Auth (API Key / JWT)                                  │    │
-│  └─────────────────────────────────────────────────────────┘    │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │ gRPC (:50050)
-                            ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                   Coordinator (Kotlin)                           │
-│              Spring Boot 3 + Redis + gRPC                        │
-│  ┌─────────────────────────────────────────────────────────┐    │
-│  │ • TaskQueueService (Redis ZSET 优先级队列)               │    │
-│  │ • PromptCacheService (Redis 缓存)                       │    │
-│  │ • WorkerPoolManager (健康检查 + 负载均衡)                │    │
-│  │ • WorkerGrpcClient (异步 gRPC 客户端)                    │    │
-│  │ • TelemetryService (Micrometer 指标)                    │    │
+│  │ • /v1/chat/completions (OpenAI 兼容)                     │    │
+│  │ • 简单鉴权 (Token)                                       │    │
 │  └─────────────────────────────────────────────────────────┘    │
 └───────────────────────────┬─────────────────────────────────────┘
                             │ gRPC (:50051)
+                            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│               Coordinator Lite (Python)                          │
+│                 gRPC Proxy + 简化调度                            │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │ • 透传请求到 Worker                                     │    │
+│  │ • 简单负载策略 (可选)                                   │    │
+│  └─────────────────────────────────────────────────────────┘    │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │ gRPC (:50052)
           ┌─────────────────┴─────────────────┐
           ▼                                   ▼
 ┌─────────────────────────┐       ┌─────────────────────────┐
@@ -103,12 +97,8 @@ CY-LLM-Engine/
 │   ├── FAQ.md                  # 常见问题
 │   └── TRT_GUIDE.md            # TensorRT-LLM 使用指南
 ├── CY_LLM_Backend/
-│   ├── gateway/                # Kotlin Gateway 服务
-│   │   └── src/main/kotlin/
-│   │       └── com/cy/llm/gateway/
-│   ├── coordinator/            # Kotlin Coordinator 服务
-│   │   └── src/main/kotlin/
-│   │       └── com/cy/llm/coordinator/
+|   ├── gateway_lite/           # Python Gateway Lite (FastAPI)
+|   ├── coordinator_lite/       # Python Coordinator Lite (gRPC Proxy)
 │   ├── worker/                 # Python Worker 服务
 │   │   ├── main.py             # 入口点
 │   │   ├── core/               # 核心组件
@@ -164,10 +154,9 @@ CY-LLM-Engine/
 | 组件 | 最低版本 |
 |------|----------|
 | Python | 3.10+ |
-| Java | 21+ |
 | CUDA | 12.0+ (NVIDIA) |
 | CANN | 8.0+ (Ascend) |
-| Redis | 7.0+ |
+| Redis | 可选 |
 
 ### 安装步骤
 
@@ -181,20 +170,24 @@ cd CY-LLM-Engine
 ./cy-llm setup --engine cuda-trt     # TensorRT-LLM
 ./cy-llm setup --engine ascend-vllm  # Ascend NPU
 
-# 3. 启动服务
-./cy-llm start --model <model-id>
+# 3. 安装 Lite 依赖
+conda run -n ${CY_LLM_CONDA_ENV:-vllm} pip install -r CY_LLM_Backend/gateway_lite/requirements.txt
+conda run -n ${CY_LLM_CONDA_ENV:-vllm} pip install -r CY_LLM_Backend/coordinator_lite/requirements.txt
 
-# 4. 验证部署
-curl http://localhost:8080/api/v1/health
+# 4. 启动 Lite 服务
+./cy-llm lite --model <model-id>
+
+# 5. 验证部署
+curl http://localhost:8000/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d '{"model":"<model-id>","messages":[{"role":"user","content":"你好"}]}'
 ```
 
-### Docker 部署
+### Docker 部署 (Lite)
 
 ```bash
-cd CY_LLM_Backend/deploy
-cp .env.example .env
-vim .env  # 配置环境变量
-docker compose up -d
+# 说明: Lite Docker Compose 将在后续补充
+# 目前可使用 CLI 启动进行本地联调
 ```
 
 ## 引擎选择指南
@@ -206,45 +199,27 @@ docker compose up -d
 | `ascend-vllm` | 华为 NPU | 兼容 vLLM API | Ascend 环境 |
 | `ascend-mindie` | 华为 NPU | 官方优化 | Ascend 高性能 |
 
-## 主要组件
+## 主要组件 (Lite)
 
-### Gateway (端口 8080)
+### Gateway Lite (端口 8000)
 
-- HTTP API 入口 (REST/WebSocket)
-- 身份验证/授权 (API Key / JWT)
-- 请求路由和协议转换
-- 错误处理和重试策略
+- OpenAI 兼容接口（/v1/chat/completions）
+- 简单鉴权（Token）
+- gRPC 透传到 Coordinator Lite
 
-### Coordinator (端口 50050)
+### Coordinator Lite (端口 50051)
 
-- **TaskQueueService**: Redis ZSET 优先级队列
-- **PromptCacheService**: Redis 缓存 (SHA256 哈希)
-- **WorkerPoolManager**: 健康检查 + 负载均衡
-- **TelemetryService**: Micrometer + Prometheus 指标
+- gRPC 透传到 Worker
+- 简化调度（可扩展负载策略）
 
-### Worker (端口 50051)
+### Worker (端口 50052)
 
-- **InferenceEngine**: GPU/NPU 推理
-- **TrainingEngine**: LoRA/PEFT 微调
-- **MemoryManager**: 显存管理
-- **Telemetry**: Prometheus 指标
+- 推理引擎：vLLM / TensorRT-LLM / MindIE
+- 训练能力保留（按需使用）
 
 ## 监控与指标
 
-### Prometheus 指标端点
-
-| 服务 | 端点 |
-|------|------|
-| Gateway | `http://localhost:8080/actuator/prometheus` |
-| Coordinator | `http://localhost:50050/actuator/prometheus` |
-| Worker | `http://localhost:50051/metrics` |
-
-### 关键指标
-
-- `coordinator_inference_requests_total` - 推理请求总数
-- `coordinator_cache_hit_rate` - 缓存命中率
-- `worker_inference_latency` - 推理延迟 (P50/P95/P99)
-- `worker_gpu_memory_used` - GPU 显存使用
+Lite 版本暂不内置完整监控指标；可根据需要后续扩展。
 
 ## 文档导航
 
