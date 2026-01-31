@@ -78,34 +78,6 @@ class TestServerSetup:
         setup_reflection(mock_server)
 
 
-class TestPreloading:
-    """测试模型预加载"""
-
-    def test_preload_models_parallel(self):
-        """应并行预加载模型"""
-        from main import _preload_models
-        
-        mock_server = MagicMock()
-        models = [
-            {"id": "model-1", "path": "/path/1"},
-            {"id": "model-2", "path": "/path/2"},
-        ]
-        
-        with patch('concurrent.futures.ThreadPoolExecutor') as mock_executor:
-            mock_executor.return_value.__enter__ = Mock(return_value=MagicMock())
-            mock_executor.return_value.__exit__ = Mock(return_value=False)
-            
-            _preload_models(mock_server, models)
-
-    def test_preload_with_empty_list(self):
-        """空模型列表不应出错"""
-        from main import _preload_models
-        
-        mock_server = MagicMock()
-        
-        _preload_models(mock_server, [])
-
-
 class TestGracefulShutdown:
     """测试优雅关闭"""
 

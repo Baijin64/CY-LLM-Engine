@@ -22,13 +22,12 @@
 | [docs/TESTING.md](./docs/TESTING.md) | 测试指南与 CI 配置 |
 | [docs/FAQ.md](./docs/FAQ.md) | 常见问题解答 |
 | [docs/TRT_GUIDE.md](./docs/TRT_GUIDE.md) | TensorRT-LLM 专用指南 |
-| [DEVELOPMENT_LITE.md](./DEVELOPMENT_LITE.md) | Lite 开发与联调指南 |
 
 ### 快速指南
 
 | 文件 | 描述 |
 |------|------|
-| [QUICK_START.md](./QUICK_START.md) | 快速开始指南 (VRAM 优化、TRT 转换) |
+| [QUICK_START.md](./QUICK_START.md) | 快速开始指令速查 |
 
 ### 项目历史
 
@@ -56,8 +55,10 @@
 
 ## 🚀 快速开始 (Community Lite)
 
+### 本地启动
+
 ```bash
-# 1. 初始化环境 (可复用已有 env)
+# 1. 初始化环境
 ./cy-llm setup --engine cuda-vllm
 
 # 2. 安装 Lite 依赖
@@ -75,13 +76,30 @@ curl http://localhost:8000/v1/chat/completions \
 
 > Lite 版本默认端口为 8000（Gateway），Coordinator 为 50051，Worker 为 50052。
 
-### Docker Compose (Community Lite)
+### Docker Compose 启动
 
 ```bash
+# 启动
 docker compose -f docker-compose.community.yml up -d
 
 # 查看状态
 docker compose -f docker-compose.community.yml ps
+
+# 停止
+docker compose -f docker-compose.community.yml down
+```
+
+### 使用 VRAM 预估和优化
+
+```bash
+# 诊断环境与模型显存需求
+./cy-llm diagnose qwen2.5-7b
+
+# 转换模型为 TensorRT-LLM 引擎（可选，提升性能）
+./cy-llm convert-trt --model Qwen/Qwen2.5-7B-Instruct --output /models/qwen2.5-7b-trt
+
+# 使用 TRT 引擎启动
+./cy-llm lite --engine cuda-trt --model qwen2.5-7b-trt
 ```
 
 ---
@@ -262,6 +280,54 @@ CY-LLM-Engine/
 ├── QUICK_START.md              # 快速开始指南
 ├── requirements*.txt           # Python 依赖
 └── LICENSE
+```
+
+---
+
+## ⚙️ 配置说明
+
+### 关键环境变量
+
+#### Gateway Lite
+- `COORDINATOR_GRPC_ADDR`：Coordinator gRPC 地址（默认 `127.0.0.1:50051`）
+- `GATEWAY_API_TOKEN`：可选的静态鉴权 Token
+- `GATEWAY_REQUEST_TIMEOUT`：请求超时（秒，默认 60）
+
+#### Coordinator Lite
+- `COORDINATOR_GRPC_BIND`：Coordinator 监听地址（默认 `0.0.0.0:50051`）
+- `WORKER_GRPC_ADDRS`：Worker 列表（用逗号分隔）
+- `COORDINATOR_CONFIG`：可选配置文件路径（JSON）
+
+示例配置：
+```json
+{
+  "workers": ["worker-1:50052", "worker-2:50052"]
+}
+```
+
+#### Worker
+- `CY_LLM_ENGINE`：引擎类型（如 `cuda-vllm`）
+- `CY_LLM_DEFAULT_MODEL`：默认模型 ID 或本地路径
+- `CY_LLM_DEFAULT_ADAPTER`：LoRA 适配器路径（可选）
+- `CY_LLM_MODEL_REGISTRY`：模型注册表 JSON（可选，字符串）
+- `CY_LLM_MODEL_REGISTRY_PATH`：模型注册表路径（可选）
+- `CY_LLM_HEALTH_PORT`：健康检查端口（默认 `9090`）
+- `VLLM_GPU_MEMORY_UTILIZATION`：GPU 显存利用率（默认 `0.8`）
+
+### 模型配置文件
+
+模型配置文件位于 `CY_LLM_Backend/deploy/models.json`：
+
+```json
+{
+  "qwen2.5-7b": {
+    "model_path": "Qwen/Qwen2.5-7B-Instruct",
+    "engine": "cuda-vllm",
+    "gpu_memory_utilization": 0.85,
+    "max_model_len": 4096,
+    "quantization": null
+  }
+}
 ```
 
 ---

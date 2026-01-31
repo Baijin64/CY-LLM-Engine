@@ -82,6 +82,7 @@ class InferenceServer:
 		*,
 		preflight_report=None,
 		max_retries: int = 4,
+		progress_callback: Optional[Callable[[str], None]] = None,
 	) -> None:
 		"""带自动降级策略的模型加载。"""
 		import gc
@@ -95,37 +96,32 @@ class InferenceServer:
 		for attempt, overrides in enumerate(retry_plan, 1):
 			effective_kwargs = {**base_kwargs, **overrides}
 			try:
-				LOGGER.info(
-					"正在加载模型 %s (尝试 %d/%d)...",
-					model_id,
-					attempt,
-					attempts
-				)
+				load_msg = f"正在加载模型 {model_id}"
+				if attempts > 1:
+					load_msg += f" (尝试 {attempt}/{attempts})"
+				load_msg += "..."
+				LOGGER.info(load_msg)
+				if progress_callback:
+					progress_callback(load_msg)
 				engine.load_model(
 					model_path,
 					adapter_path,
 					**effective_kwargs,
 				)
 				if overrides:
-					LOGGER.warning(
-						"模型 %s 加载成功（尝试 %d/%d，降级配置: %s）",
-						model_id,
-						attempt,
-						attempts,
-						overrides,
-					)
+					warn_msg = f"模型 {model_id} 加载成功（尝试 {attempt}/{attempts}，降级配置: {overrides}）"
+					LOGGER.warning(warn_msg)
+					if progress_callback:
+						progress_callback(warn_msg)
 				return
 			except RuntimeError as exc:
 				if not self._is_cuda_oom(exc):
 					raise
 				last_error = exc
-				LOGGER.warning(
-					"模型 %s 加载 OOM（尝试 %d/%d），参数: %s",
-					model_id,
-					attempt,
-					attempts,
-					effective_kwargs,
-				)
+				oom_msg = f"模型 {model_id} 加载 OOM（尝试 {attempt}/{attempts}），正在重试..."
+				LOGGER.warning(oom_msg)
+				if progress_callback:
+					progress_callback(oom_msg)
 				gc.collect()
 				if torch.cuda.is_available():
 					torch.cuda.empty_cache()
@@ -213,6 +209,7 @@ class InferenceServer:
 		adapter_path: Optional[str] = None,
 		engine_type: str = "nvidia",
 		engine_kwargs: Optional[Dict] = None,
+		progress_callback: Optional[Callable[[str], None]] = None,
 	) -> BaseEngine:
 		# 如果内存管理器中已有加载的模型，直接返回
 		engine = self._memory.get_loaded_model(model_id)
@@ -233,6 +230,8 @@ class InferenceServer:
 			preflight_report = None
 			model_spec = self._resolve_model_spec(model_id)
 			if model_spec is not None:
+				if progress_callback:
+					progress_callback("正在检查显存资源...")
 				preflight_report = check_vram_for_model(model_id, model_spec)
 				if not preflight_report.success:
 					LOGGER.error(format_vram_report(preflight_report))
@@ -248,6 +247,8 @@ class InferenceServer:
 				)
 
 			# 通过工厂创建引擎并加载模型，然后交由内存管理器注册
+			if progress_callback:
+				progress_callback(f"正在初始化 {engine_type} 引擎...")
 			engine = self._engine_factory(engine_type)
 			
 			# 使用带重试的模型加载
@@ -259,8 +260,11 @@ class InferenceServer:
 				engine_kwargs or {},
 				preflight_report=preflight_report,
 				max_retries=4,
+				progress_callback=progress_callback,
 			)
 			
+			if progress_callback:
+				progress_callback("模型加载完成，准备开始推理...")
 			self._memory.register_model(model_id, engine)
 			return engine
 
@@ -305,6 +309,21 @@ class InferenceServer:
 		sentinel = "__CY_LLM_STREAM_END__"
 		error_holder: List[Exception] = []
 		collected_chunks: List[str] = []  # 用于收集响应以便缓存
+		
+		# 进度队列：用于模型加载过程中的进度信息
+		progress_queue: queue.Queue[str] = queue.Queue()
+		progress_sentinel = "__CY_LLM_PROGRESS_END__"
+		
+		# 检查模型是否已加载
+		model_loaded = self._memory.get_loaded_model(model_id) is not None
+		
+		# 如果模型未加载，先发送加载开始消息
+		if not model_loaded:
+			progress_queue.put("__CY_LLM_LOADING_START__")
+		
+		# 进度回调函数：将加载进度信息放入进度队列
+		def progress_callback(message: str) -> None:
+			progress_queue.put(f"__CY_LLM_LOADING__{message}__")
 
 		# 工作函数：由调度器在后台线程调用，负责实际的推理并把结果放入队列
 		def _task() -> None:
@@ -318,7 +337,11 @@ class InferenceServer:
 					adapter_path=adapter_path,
 					engine_type=engine_type,
 					engine_kwargs=engine_kwargs,
+					progress_callback=progress_callback if not model_loaded else None,
 				)
+				# 模型加载完成，发送加载结束消息
+				if not model_loaded:
+					progress_queue.put(progress_sentinel)
 				# 调用引擎的 infer，流式读取生成数据并入队
 				for chunk in engine.infer(prompt, **gen_kwargs):
 					response_queue.put(str(chunk))
@@ -331,6 +354,8 @@ class InferenceServer:
 				# 发生异常时记录并通知外层处理
 				self._telemetry.track_request_end(time.time() - start, success=False)
 				error_holder.append(exc)
+				if not model_loaded:
+					progress_queue.put(progress_sentinel)
 				response_queue.put(sentinel)
 			finally:
 				# 标记该模型最近访问时间，防止被误回收
@@ -341,6 +366,44 @@ class InferenceServer:
 		except SchedulerBusy as exc:  # noqa: PERF203
 			raise RuntimeError("Server is overloaded, please retry later.") from exc
 
+		# 先处理加载进度信息
+		progress_done = model_loaded  # 如果模型已加载，跳过进度处理
+		if not model_loaded:
+			yield "[模型加载] 开始加载模型，这可能需要几分钟，请耐心等待...\n"
+		
+		while not progress_done:
+			try:
+				# 使用超时避免阻塞
+				progress_item = progress_queue.get(timeout=0.1)
+				if progress_item == progress_sentinel:
+					progress_done = True
+				elif progress_item.startswith("__CY_LLM_LOADING__"):
+					# 提取进度消息并输出
+					message = progress_item.replace("__CY_LLM_LOADING__", "").rstrip("__")
+					yield f"[模型加载] {message}\n"
+			except queue.Empty:
+				# 检查是否有错误
+				if error_holder:
+					break
+				# 继续等待进度信息
+				pass
+			# 检查是否有错误
+			if error_holder:
+				# 确保处理完所有进度消息
+				while True:
+					try:
+						progress_item = progress_queue.get_nowait()
+						if progress_item == progress_sentinel:
+							progress_done = True
+							break
+						elif progress_item.startswith("__CY_LLM_LOADING__"):
+							message = progress_item.replace("__CY_LLM_LOADING__", "").rstrip("__")
+							yield f"[模型加载] {message}\n"
+					except queue.Empty:
+						break
+				break
+
+		# 然后处理推理结果
 		while True:
 			item: str = response_queue.get()
 			if item == sentinel:

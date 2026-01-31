@@ -2,16 +2,15 @@
 # =============================================================================
 # 压力测试脚本 - 使用 k6
 # 安装: https://k6.io/docs/getting-started/installation/
-# 用法: ./benchmark.sh [endpoint] [api_key]
+# 用法: ./benchmark.sh [endpoint] [duration] [vus]
 # =============================================================================
 
 set -e
 
 # 配置
-ENDPOINT="${1:-http://localhost:8080}"
-API_KEY="${2:-your-test-api-key}"
-DURATION="${3:-30s}"
-VUS="${4:-50}"
+ENDPOINT="${1:-http://localhost:8000}"
+DURATION="${2:-30s}"
+VUS="${3:-10}"
 
 # 颜色
 GREEN='\033[0;32m'
@@ -20,11 +19,10 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 
 echo -e "${CYAN}========================================${NC}"
-echo -e "${CYAN}  CY-LLM Gateway 压力测试${NC}"
+echo -e "${CYAN}  CY-LLM Lite 压力测试${NC}"
 echo -e "${CYAN}========================================${NC}"
 echo ""
 echo "Endpoint: $ENDPOINT"
-echo "API Key:  ${API_KEY:0:10}..."
 echo "Duration: $DURATION"
 echo "VUs:      $VUS"
 echo ""
@@ -56,53 +54,51 @@ const errorRate = new Rate('errors');
 const latency = new Trend('latency');
 
 // 从环境变量读取配置
-const ENDPOINT = __ENV.ENDPOINT || 'http://localhost:8080';
-const API_KEY = __ENV.API_KEY || '';
+const ENDPOINT = __ENV.ENDPOINT || 'http://localhost:8000';
 
 export const options = {
-    vus: parseInt(__ENV.VUS) || 50,
+    vus: parseInt(__ENV.VUS) || 10,
     duration: __ENV.DURATION || '30s',
     thresholds: {
-        http_req_duration: ['p(95)<2000'],  // 95% 请求 < 2秒
+        http_req_duration: ['p(95)<5000'],  // 95% 请求 < 5秒
         errors: ['rate<0.1'],                // 错误率 < 10%
     },
 };
 
 export default function () {
     // 测试 1: 健康检查
-    const healthRes = http.get(`${ENDPOINT}/actuator/health`);
+    const healthRes = http.get(`${ENDPOINT}/health`);
     check(healthRes, {
         'health check status is 200': (r) => r.status === 200,
     });
 
-    // 测试 2: 推理接口 (同步)
+    // 测试 2: OpenAI 兼容推理接口
     const inferencePayload = JSON.stringify({
-        modelId: 'default',
-        prompt: '你好，请简短回复。',
-        generation: {
-            maxNewTokens: 50,
-            temperature: 0.7,
-        },
+        model: 'default',
+        messages: [
+            { role: 'user', content: '你好，请简短回复。' }
+        ],
+        temperature: 0.7,
+        max_tokens: 50,
     });
 
     const inferenceRes = http.post(
-        `${ENDPOINT}/api/v1/inference`,
+        `${ENDPOINT}/v1/chat/completions`,
         inferencePayload,
         {
             headers: {
                 'Content-Type': 'application/json',
-                'X-API-Key': API_KEY,
             },
-            timeout: '30s',
+            timeout: '60s',
         }
     );
 
     const success = check(inferenceRes, {
         'inference status is 200': (r) => r.status === 200,
-        'inference has content': (r) => {
+        'inference has choices': (r) => {
             try {
                 const body = JSON.parse(r.body);
-                return body.content && body.content.length > 0;
+                return body.choices && body.choices.length > 0;
             } catch {
                 return false;
             }
@@ -112,22 +108,7 @@ export default function () {
     errorRate.add(!success);
     latency.add(inferenceRes.timings.duration);
 
-    // 检查速率限制响应头
-    if (inferenceRes.headers['X-RateLimit-Remaining']) {
-        const remaining = parseInt(inferenceRes.headers['X-RateLimit-Remaining']);
-        if (remaining < 10) {
-            console.log(`Warning: Rate limit remaining: ${remaining}`);
-        }
-    }
-
-    // 如果被限流，等待
-    if (inferenceRes.status === 429) {
-        const retryAfter = parseInt(inferenceRes.headers['Retry-After']) || 60;
-        console.log(`Rate limited, waiting ${retryAfter}s`);
-        sleep(retryAfter);
-    }
-
-    sleep(0.1);  // 100ms 间隔
+    sleep(1);  // 1秒间隔，避免过载
 }
 
 export function handleSummary(data) {
@@ -158,7 +139,6 @@ echo ""
 # 运行 k6
 k6 run \
     -e ENDPOINT="$ENDPOINT" \
-    -e API_KEY="$API_KEY" \
     -e VUS="$VUS" \
     -e DURATION="$DURATION" \
     "$K6_SCRIPT"

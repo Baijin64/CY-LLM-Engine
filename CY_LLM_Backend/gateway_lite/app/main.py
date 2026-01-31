@@ -85,9 +85,27 @@ def get_request_timeout() -> Optional[float]:
 
 
 def build_prompt(messages: List[ChatMessage]) -> str:
+    """
+    构建对话提示词。
+    对于简单模型（如 OPT），使用清晰的对话格式。
+    """
+    # 检查是否只有一条用户消息（最简单的情况）
+    if len(messages) == 1 and messages[0].role == "user":
+        # 直接返回用户内容，让模型自由回复
+        return messages[0].content
+    
+    # 多轮对话：构建对话历史
     lines = []
     for msg in messages:
-        lines.append(f"{msg.role}: {msg.content}")
+        if msg.role == "system":
+            lines.append(f"System: {msg.content}")
+        elif msg.role == "user":
+            lines.append(f"User: {msg.content}")
+        elif msg.role == "assistant":
+            lines.append(f"Assistant: {msg.content}")
+    
+    # 添加 Assistant 前缀，引导模型生成回复
+    lines.append("Assistant:")
     return "\n".join(lines)
 
 
@@ -105,7 +123,12 @@ def require_token(authorization: Optional[str]) -> None:
 async def stream_predict(prompt: str, model_id: str, params: ChatCompletionRequest) -> str:
     target = get_coordinator_addr()
     trace_id = str(uuid.uuid4())
-    timeout = get_request_timeout()
+    base_timeout = get_request_timeout()
+    # 模型加载可能需要较长时间，使用更长的超时时间
+    # 加载阶段不计入正常超时，使用一个很长的超时时间（30分钟）
+    # 这样可以确保模型加载不会因为超时而失败
+    loading_timeout = 1800.0  # 30分钟，足够模型加载
+    timeout = loading_timeout if base_timeout is None else max(base_timeout, loading_timeout)
 
     async def request_iter():
         yield ai_service_pb2.StreamPredictRequest(
@@ -124,14 +147,30 @@ async def stream_predict(prompt: str, model_id: str, params: ChatCompletionReque
         async with grpc.aio.insecure_channel(target) as channel:
             stub = ai_service_pb2_grpc.AiInferenceStub(channel)
             response_text = []
+            
             async for resp in stub.StreamPredict(request_iter(), timeout=timeout):
-                response_text.append(resp.chunk)
+                chunk = resp.chunk
+                
+                # 过滤掉模型加载进度信息（以"[模型加载]"开头的消息）
+                # 这些信息只在服务端日志中显示，不返回给客户端
+                if "[模型加载]" in chunk:
+                    continue  # 跳过加载进度信息
+                
+                response_text.append(chunk)
                 if resp.end_of_stream:
                     break
+            
+            # 只返回实际的模型响应，不包含加载进度信息
             return "".join(response_text)
     except grpc.aio.AioRpcError as e:
+        # 如果是超时错误，提供更详细的错误信息
+        if e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
+            detail = f"Request timeout: {e.details()}. Model loading may take several minutes for the first request."
+            raise HTTPException(status_code=504, detail=detail)
         detail = f"Coordinator unavailable or error: {e.details()}"
         raise HTTPException(status_code=503, detail=detail)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
