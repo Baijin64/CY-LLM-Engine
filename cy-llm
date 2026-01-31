@@ -800,7 +800,27 @@ cmd_test() {
             ;;
         unit)
             info "运行单元测试..."
-            (cd "$GATEWAY_DIR" && ./gradlew test)
+            # 检查并安装测试依赖
+            local missing_deps=()
+            if ! $conda_cmd run -n "$env_name" python -c "import pytest" 2>/dev/null; then
+                missing_deps+=("pytest")
+            fi
+            if ! $conda_cmd run -n "$env_name" python -c "import pytest_asyncio" 2>/dev/null; then
+                missing_deps+=("pytest-asyncio")
+            fi
+            
+            if [ ${#missing_deps[@]} -gt 0 ]; then
+                warn "缺少测试依赖: ${missing_deps[*]}，正在安装..."
+                $conda_cmd run -n "$env_name" pip install "${missing_deps[@]}" -q
+            fi
+            
+            # 运行 worker 单元测试
+            if [[ -d "$WORKER_DIR/tests" ]]; then
+                $conda_cmd run -n "$env_name" python -m pytest "$WORKER_DIR/tests" -v --tb=short
+            else
+                warn "测试目录不存在: $WORKER_DIR/tests"
+                exit 1
+            fi
             ;;
         all)
             cmd_test integration
