@@ -1,0 +1,1399 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CY-LLM Engine 系统架构</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0e1a;
+            --bg-secondary: #141927;
+            --bg-card: #1a1f35;
+            --accent-blue: #00d4ff;
+            --accent-cyan: #00ffb3;
+            --accent-purple: #a78bfa;
+            --accent-orange: #ff6b35;
+            --text-primary: #e8edf4;
+            --text-secondary: #9ca3af;
+            --border-color: rgba(0, 212, 255, 0.2);
+            --glow-blue: rgba(0, 212, 255, 0.4);
+            --glow-cyan: rgba(0, 255, 179, 0.3);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        /* Animated background */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: 
+                radial-gradient(circle at 20% 30%, rgba(0, 212, 255, 0.08) 0%, transparent 50%),
+                radial-gradient(circle at 80% 70%, rgba(167, 139, 250, 0.06) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 0 2rem;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Header */
+        header {
+            padding: 4rem 0 3rem;
+            text-align: center;
+            position: relative;
+        }
+
+        h1 {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 3.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-cyan) 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 1rem;
+            animation: fadeInDown 0.8s ease-out;
+        }
+
+        .subtitle {
+            font-size: 1.2rem;
+            color: var(--text-secondary);
+            font-weight: 400;
+            animation: fadeInUp 0.8s ease-out 0.2s both;
+        }
+
+        .version-badge {
+            display: inline-block;
+            margin-top: 1rem;
+            padding: 0.5rem 1.5rem;
+            background: rgba(0, 212, 255, 0.1);
+            border: 1px solid var(--border-color);
+            border-radius: 2rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            color: var(--accent-blue);
+            animation: fadeInUp 0.8s ease-out 0.4s both;
+        }
+
+        /* Tab Navigation */
+        .tab-nav {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            margin: 3rem 0;
+            animation: fadeInUp 0.8s ease-out 0.6s both;
+        }
+
+        .tab-button {
+            padding: 1rem 3rem;
+            background: var(--bg-card);
+            border: 2px solid var(--border-color);
+            border-radius: 1rem;
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .tab-button::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 0;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.2), transparent);
+            transition: width 0.5s;
+        }
+
+        .tab-button:hover::before {
+            width: 100%;
+        }
+
+        .tab-button:hover {
+            border-color: var(--accent-blue);
+            color: var(--accent-blue);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0, 212, 255, 0.2);
+        }
+
+        .tab-button.active {
+            background: linear-gradient(135deg, rgba(0, 212, 255, 0.2) 0%, rgba(0, 255, 179, 0.1) 100%);
+            border-color: var(--accent-blue);
+            color: var(--accent-blue);
+            box-shadow: 0 0 30px var(--glow-blue);
+        }
+
+        /* Tab Content */
+        .tab-content {
+            display: none;
+            animation: fadeIn 0.5s ease-out;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Architecture Sections */
+        .architecture-section {
+            margin-bottom: 4rem;
+        }
+
+        .section-title {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--accent-cyan);
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .section-title::before {
+            content: '';
+            width: 4px;
+            height: 2rem;
+            background: linear-gradient(180deg, var(--accent-cyan), transparent);
+            border-radius: 2px;
+        }
+
+        /* Card Styles */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 1.5rem;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--accent-blue), transparent);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .card:hover {
+            border-color: var(--accent-blue);
+            transform: translateY(-4px);
+            box-shadow: 0 12px 32px rgba(0, 212, 255, 0.15);
+        }
+
+        .card:hover::before {
+            opacity: 1;
+        }
+
+        .card-title {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: var(--accent-blue);
+            margin-bottom: 1rem;
+        }
+
+        .card-content {
+            color: var(--text-secondary);
+            line-height: 1.8;
+        }
+
+        /* Layer Grid */
+        .layer-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 1.5rem;
+            margin: 2rem 0;
+        }
+
+        .layer-card {
+            background: linear-gradient(135deg, var(--bg-card) 0%, rgba(26, 31, 53, 0.8) 100%);
+            border: 1px solid var(--border-color);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            transition: all 0.3s;
+        }
+
+        .layer-card:hover {
+            border-color: var(--accent-cyan);
+            box-shadow: 0 8px 24px var(--glow-cyan);
+        }
+
+        .layer-name {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--accent-cyan);
+            margin-bottom: 0.5rem;
+        }
+
+        .layer-tech {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.8rem;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .layer-desc {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+
+        /* Feature List */
+        .feature-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .feature-item {
+            padding: 1rem 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex;
+            align-items: flex-start;
+            gap: 1rem;
+            transition: all 0.2s;
+        }
+
+        .feature-item:hover {
+            padding-left: 0.5rem;
+            border-bottom-color: var(--accent-blue);
+        }
+
+        .feature-item::before {
+            content: '▹';
+            color: var(--accent-cyan);
+            font-weight: bold;
+            flex-shrink: 0;
+        }
+
+        .feature-item:last-child {
+            border-bottom: none;
+        }
+
+        /* Comparison Table */
+        .comparison-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            margin: 2rem 0;
+            overflow: hidden;
+            border-radius: 1rem;
+            background: var(--bg-card);
+        }
+
+        .comparison-table th {
+            background: linear-gradient(135deg, rgba(0, 212, 255, 0.2), rgba(0, 255, 179, 0.1));
+            color: var(--accent-blue);
+            font-family: 'JetBrains Mono', monospace;
+            padding: 1.2rem;
+            text-align: left;
+            font-weight: 600;
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        .comparison-table td {
+            padding: 1.2rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            color: var(--text-secondary);
+        }
+
+        .comparison-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .comparison-table tr:hover {
+            background: rgba(0, 212, 255, 0.05);
+        }
+
+        .feature-tag {
+            display: inline-block;
+            padding: 0.3rem 0.8rem;
+            background: rgba(0, 212, 255, 0.1);
+            border: 1px solid var(--border-color);
+            border-radius: 0.5rem;
+            font-size: 0.85rem;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--accent-cyan);
+            margin-right: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        /* Code Block */
+        .code-block {
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid var(--border-color);
+            border-radius: 0.8rem;
+            padding: 1.5rem;
+            margin: 1rem 0;
+            overflow-x: auto;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            line-height: 1.6;
+        }
+
+        .code-block code {
+            color: var(--accent-cyan);
+        }
+
+        /* Data Flow */
+        .flow-step {
+            display: flex;
+            align-items: flex-start;
+            gap: 1.5rem;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            background: linear-gradient(90deg, rgba(0, 212, 255, 0.05), transparent);
+            border-left: 3px solid var(--accent-blue);
+            border-radius: 0.5rem;
+            transition: all 0.3s;
+        }
+
+        .flow-step:hover {
+            background: linear-gradient(90deg, rgba(0, 212, 255, 0.1), transparent);
+            transform: translateX(8px);
+        }
+
+        .flow-number {
+            flex-shrink: 0;
+            width: 2.5rem;
+            height: 2.5rem;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 700;
+            color: var(--bg-primary);
+        }
+
+        .flow-content h4 {
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--accent-blue);
+            margin-bottom: 0.5rem;
+        }
+
+        .flow-content p {
+            color: var(--text-secondary);
+            line-height: 1.6;
+        }
+
+        /* Animations */
+        @keyframes fadeInDown {
+            from {
+                opacity: 0;
+                transform: translateY(-30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        /* Footer */
+        footer {
+            text-align: center;
+            padding: 3rem 0;
+            margin-top: 4rem;
+            border-top: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 2.5rem;
+            }
+            
+            .tab-nav {
+                flex-direction: column;
+                gap: 1rem;
+            }
+            
+            .layer-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .comparison-table {
+                font-size: 0.85rem;
+            }
+            
+            .comparison-table th,
+            .comparison-table td {
+                padding: 0.8rem;
+            }
+        }
+
+        /* Highlight Box */
+        .highlight-box {
+            background: linear-gradient(135deg, rgba(255, 107, 53, 0.1), rgba(167, 139, 250, 0.1));
+            border-left: 4px solid var(--accent-orange);
+            padding: 1.5rem;
+            border-radius: 0.8rem;
+            margin: 1.5rem 0;
+        }
+
+        .highlight-box h4 {
+            color: var(--accent-orange);
+            font-family: 'JetBrains Mono', monospace;
+            margin-bottom: 0.8rem;
+        }
+
+        /* Architecture Diagram Styles */
+        .architecture-diagram {
+            background: linear-gradient(135deg, rgba(10, 14, 26, 0.9), rgba(20, 25, 39, 0.9));
+            padding: 2.5rem;
+            overflow-x: auto;
+        }
+
+        .diagram-legend {
+            display: flex;
+            gap: 2rem;
+            justify-content: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .legend-item {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .legend-item.control-flow::before {
+            content: '';
+            width: 20px;
+            height: 3px;
+            background: var(--accent-cyan);
+            border-radius: 2px;
+        }
+
+        .legend-item.data-flow::before {
+            content: '';
+            width: 20px;
+            height: 3px;
+            background: var(--accent-blue);
+            border-radius: 2px;
+        }
+
+        .topology-container {
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+            min-width: 800px;
+        }
+
+        .topo-layer {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+            animation: fadeInUp 0.6s ease-out backwards;
+        }
+
+        .topo-layer:nth-child(1) { animation-delay: 0.1s; }
+        .topo-layer:nth-child(2) { animation-delay: 0.2s; }
+        .topo-layer:nth-child(3) { animation-delay: 0.3s; }
+        .topo-layer:nth-child(4) { animation-delay: 0.4s; }
+        .topo-layer:nth-child(5) { animation-delay: 0.5s; }
+
+        .topo-box {
+            background: linear-gradient(135deg, rgba(26, 31, 53, 0.9), rgba(20, 25, 39, 0.8));
+            border: 2px solid var(--border-color);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            min-width: 600px;
+            transition: all 0.3s;
+        }
+
+        .topo-box:hover {
+            border-color: var(--accent-blue);
+            box-shadow: 0 8px 32px rgba(0, 212, 255, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .box-title {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: var(--accent-blue);
+            text-align: center;
+            margin-bottom: 0.8rem;
+        }
+
+        .box-subtitle {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            text-align: center;
+            margin-bottom: 0.5rem;
+        }
+
+        .box-content {
+            text-align: center;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+        }
+
+        .box-tech {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            color: var(--accent-cyan);
+            text-align: center;
+        }
+
+        .feature-dot {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            padding: 0.3rem 0;
+            text-align: left;
+        }
+
+        /* Layer Wrapper */
+        .layer-wrapper {
+            width: 100%;
+            background: rgba(0, 212, 255, 0.03);
+            border: 1px solid var(--border-color);
+            border-radius: 1.2rem;
+            padding: 1.5rem;
+        }
+
+        .layer-title {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--accent-cyan);
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+
+        /* Gateway Boxes */
+        .gateway-boxes {
+            display: flex;
+            gap: 2rem;
+            justify-content: center;
+            align-items: flex-start;
+        }
+
+        .gateway-boxes.lite {
+            justify-content: center;
+        }
+
+        .gateway-box {
+            flex: 1;
+            max-width: 400px;
+        }
+
+        .gateway-box.enterprise {
+            border-color: var(--accent-purple);
+        }
+
+        .gateway-box.lite {
+            border-color: var(--accent-cyan);
+            max-width: 500px;
+        }
+
+        .gateway-storage {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            min-width: 180px;
+        }
+
+        .gateway-storage.lite {
+            min-width: 150px;
+        }
+
+        .mini-box {
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid var(--border-color);
+            border-radius: 0.8rem;
+            padding: 1rem;
+            text-align: center;
+        }
+
+        .mini-title {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--accent-blue);
+            margin-bottom: 0.3rem;
+        }
+
+        .mini-content {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        .db-box {
+            border-color: rgba(167, 139, 250, 0.4);
+        }
+
+        .cache-box {
+            border-color: rgba(0, 255, 179, 0.4);
+        }
+
+        /* Coordinator Components */
+        .coordinator-box {
+            min-width: 700px;
+        }
+
+        .coordinator-box.lite {
+            min-width: 500px;
+        }
+
+        .coordinator-components {
+            display: flex;
+            gap: 1rem;
+            justify-content: space-around;
+            margin-top: 1rem;
+        }
+
+        .coordinator-components.lite {
+            gap: 2rem;
+        }
+
+        .component-item {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border-color);
+            border-radius: 0.8rem;
+            padding: 1rem;
+            flex: 1;
+            text-align: center;
+            transition: all 0.3s;
+        }
+
+        .component-item:hover {
+            border-color: var(--accent-cyan);
+            background: rgba(0, 255, 179, 0.05);
+        }
+
+        .component-item.highlight {
+            border-color: var(--accent-purple);
+            background: linear-gradient(135deg, rgba(167, 139, 250, 0.1), rgba(0, 212, 255, 0.05));
+        }
+
+        .component-item.disabled {
+            border-color: rgba(255, 255, 255, 0.1);
+            color: var(--text-secondary);
+            opacity: 0.6;
+        }
+
+        .comp-name {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--accent-cyan);
+            margin-bottom: 0.5rem;
+        }
+
+        .component-item.disabled .comp-name {
+            color: var(--text-secondary);
+        }
+
+        .comp-detail {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        .telemetry-flow {
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px dashed var(--border-color);
+            text-align: center;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            color: var(--accent-cyan);
+        }
+
+        /* Hardware Selector */
+        .hardware-selector {
+            background: rgba(255, 107, 53, 0.1);
+            border: 1px dashed var(--accent-orange);
+            border-radius: 0.8rem;
+            padding: 1rem;
+            text-align: center;
+            max-width: 600px;
+        }
+
+        .selector-box {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+            color: var(--accent-orange);
+            margin-bottom: 0.5rem;
+        }
+
+        .selector-note {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        /* Worker Components */
+        .worker-box {
+            min-width: 700px;
+        }
+
+        .worker-box.lite {
+            min-width: 700px; /* Same width as enterprise now */
+        }
+
+        .worker-components {
+            display: flex;
+            gap: 1.5rem;
+            align-items: center;
+            justify-content: center;
+            margin-top: 1rem;
+        }
+
+        .worker-components.lite {
+            justify-content: center;
+        }
+
+        .worker-item {
+            background: rgba(0, 0, 0, 0.4);
+            border: 2px solid var(--border-color);
+            border-radius: 1rem;
+            padding: 1.2rem;
+            flex: 1;
+            max-width: 280px;
+        }
+
+        .worker-item.full {
+            max-width: 400px;
+        }
+
+        .worker-item.sidecar {
+            border-color: var(--accent-purple);
+        }
+
+        .worker-item.engine {
+            border-color: var(--accent-cyan);
+        }
+
+        .worker-name {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--accent-blue);
+            margin-bottom: 0.3rem;
+            text-align: center;
+        }
+
+        .worker-subtitle {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.8rem;
+            text-align: center;
+        }
+
+        .uds-connection {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.3rem;
+            padding: 0.8rem;
+            background: rgba(0, 212, 255, 0.1);
+            border: 2px dashed var(--accent-blue);
+            border-radius: 0.6rem;
+            min-width: 120px;
+        }
+
+        .uds-label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--accent-blue);
+        }
+
+        .uds-sublabel {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        /* Hardware Boxes */
+        .hardware-boxes {
+            display: flex;
+            gap: 2rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .hardware-boxes.lite {
+            gap: 0;
+        }
+
+        .hw-box {
+            background: linear-gradient(135deg, rgba(0, 0, 0, 0.6), rgba(26, 31, 53, 0.4));
+            border: 2px solid var(--border-color);
+            border-radius: 1rem;
+            padding: 1.5rem 2rem;
+            text-align: center;
+            transition: all 0.3s;
+            min-width: 180px;
+        }
+
+        .hw-box:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 24px rgba(0, 212, 255, 0.3);
+        }
+
+        .hw-box.nvidia {
+            border-color: rgba(118, 185, 0, 0.6);
+        }
+
+        .hw-box.nvidia:hover {
+            border-color: rgb(118, 185, 0);
+            box-shadow: 0 8px 24px rgba(118, 185, 0, 0.3);
+        }
+
+        .hw-box.ascend {
+            border-color: rgba(255, 107, 53, 0.6);
+        }
+
+        .hw-box.ascend:hover {
+            border-color: rgb(255, 107, 53);
+            box-shadow: 0 8px 24px rgba(255, 107, 53, 0.3);
+        }
+
+        .hw-box.amd {
+            border-color: rgba(167, 139, 250, 0.6);
+        }
+
+        .hw-box.amd:hover {
+            border-color: rgb(167, 139, 250);
+            box-shadow: 0 8px 24px rgba(167, 139, 250, 0.3);
+        }
+
+        .hw-icon {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .hw-name {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--accent-blue);
+            margin-bottom: 0.3rem;
+        }
+
+        .hw-tech {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        /* Flow Arrows */
+        .flow-arrow {
+            position: relative;
+            width: 3px;
+            height: 40px;
+            background: var(--accent-blue);
+            margin: 0.5rem 0;
+        }
+
+        .flow-arrow::after {
+            content: '';
+            position: absolute;
+            bottom: -8px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            border-left: 8px solid transparent;
+            border-right: 8px solid transparent;
+            border-top: 12px solid var(--accent-blue);
+        }
+
+        .flow-arrow.control {
+            background: var(--accent-cyan);
+        }
+
+        .flow-arrow.control::after {
+            border-top-color: var(--accent-cyan);
+        }
+
+        .flow-arrow.data {
+            background: var(--accent-blue);
+        }
+
+        .flow-arrow[data-label]::before {
+            content: attr(data-label);
+            position: absolute;
+            left: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: var(--accent-cyan);
+            padding: 0.3rem 0.8rem;
+            border-radius: 0.4rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            white-space: nowrap;
+            border: 1px solid var(--border-color);
+        }
+
+        .flow-arrow.down[data-label]::before {
+            left: 1rem;
+        }
+
+        /* Responsive Adjustments for Diagrams */
+        @media (max-width: 768px) {
+            .architecture-diagram {
+                padding: 1.5rem 1rem;
+            }
+
+            .topology-container {
+                min-width: 100%;
+            }
+
+            .topo-box {
+                min-width: 100%;
+            }
+
+            .coordinator-box,
+            .worker-box {
+                min-width: 100%;
+            }
+
+            .gateway-boxes {
+                flex-direction: column;
+            }
+
+            .worker-components {
+                flex-direction: column;
+            }
+
+            .hardware-boxes {
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .flow-arrow[data-label]::before {
+                font-size: 0.7rem;
+                padding: 0.2rem 0.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>CY-LLM Engine</h1>
+            <p class="subtitle">Open Core 架构：核心统一，功能插件化</p>
+            <span class="version-badge">v3.0 Unified Core Architecture</span>
+        </header>
+
+        <div class="tab-nav">
+            <button class="tab-button active" onclick="switchTab('enterprise')">企业版架构 (Full)</button>
+            <button class="tab-button" onclick="switchTab('opensource')">开源版架构 (Core)</button>
+        </div>
+
+        <!-- Enterprise Tab -->
+        <div id="enterprise-tab" class="tab-content active">
+            <div class="architecture-section">
+                <h2 class="section-title">企业版架构 (Core + Plugins)</h2>
+                
+                <div class="card">
+                    <h3 class="card-title">企业版特性</h3>
+                    <div class="card-content">
+                        <ul class="feature-list">
+                            <li class="feature-item"><strong>统一核心：</strong>基于 Rust Sidecar 的标准数据面，无损兼容</li>
+                            <li class="feature-item"><strong>插件化调度：</strong>Rust 拓扑感知调度器作为插件注入</li>
+                            <li class="feature-item"><strong>企业级网关：</strong>Kotlin Backend 替换 Python Gateway</li>
+                            <li class="feature-item"><strong>全硬件抽象：</strong>标准化的硬件抽象层，无需修改代码</li>
+                            <li class="feature-item"><strong>商业增强：</strong>多租户配额、审计日志、OAuth2 认证</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <h3 class="section-title">系统拓扑图</h3>
+                <div class="card architecture-diagram">
+                    <div class="diagram-legend">
+                        <span class="legend-item control-flow">🟢 控制流 (Control Plane)</span>
+                        <span class="legend-item data-flow">🔵 数据流 (Data Plane)</span>
+                    </div>
+                    <div class="topology-container">
+                        <!-- Client Layer -->
+                        <div class="topo-layer client-layer">
+                            <div class="topo-box client-box">
+                                <div class="box-title">客户端层 (Clients)</div>
+                                <div class="box-content">Web App / Mobile App / API Client</div>
+                                <div class="box-tech">HTTP/HTTPS / WebSocket / SSE</div>
+                            </div>
+                            <div class="flow-arrow down" data-label="① Request"></div>
+                        </div>
+
+                        <!-- API Gateway Layer -->
+                        <div class="topo-layer gateway-layer">
+                            <div class="layer-wrapper">
+                                <div class="layer-title">API 接入层 (Enterprise Replacement)</div>
+                                <div class="gateway-boxes">
+                                    <div class="topo-box gateway-box enterprise">
+                                        <div class="box-title">Enterprise: Kotlin Backend</div>
+                                        <div class="box-content">
+                                            <div class="feature-dot">• 企业级 JWT/OAuth2</div>
+                                            <div class="feature-dot">• 多租户配额 / 计费</div>
+                                            <div class="feature-dot">• 增强型外部 API 转接</div>
+                                        </div>
+                                    </div>
+                                    <div class="gateway-storage">
+                                        <div class="mini-box db-box">
+                                            <div class="mini-title">SQL Database</div>
+                                            <div class="mini-content">PostgreSQL</div>
+                                        </div>
+                                        <div class="mini-box cache-box">
+                                            <div class="mini-title">Redis Cache</div>
+                                            <div class="mini-content">Semantic</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="flow-arrow down control" data-label="② Schedule Request (:50050)"></div>
+                        </div>
+
+                        <!-- Coordinator Layer -->
+                        <div class="topo-layer coordinator-layer">
+                            <div class="topo-box coordinator-box">
+                                <div class="box-title">Coordinator (Python Core + Plugins)</div>
+                                <div class="coordinator-components">
+                                    <div class="component-item">
+                                        <div class="comp-name">负载均衡</div>
+                                        <div class="comp-detail">W-R/Hash</div>
+                                    </div>
+                                    <div class="component-item highlight">
+                                        <div class="comp-name">Rust Scheduler Plugin</div>
+                                        <div class="comp-detail">[Topology Aware]</div>
+                                    </div>
+                                    <div class="component-item">
+                                        <div class="comp-name">Global Cache</div>
+                                        <div class="comp-detail">Metadata</div>
+                                    </div>
+                                </div>
+                                <div class="telemetry-flow">🟢 ⑤ Telemetry (Heartbeat / Metrics)</div>
+                            </div>
+                            <div class="flow-arrow down data" data-label="③ Direct Stream (gRPC / :50051)"></div>
+                        </div>
+
+                        <!-- Worker Layer -->
+                        <div class="topo-layer worker-layer">
+                            <div class="topo-box worker-box">
+                                <div class="box-title">Unified Worker Pod (Standard)</div>
+                                <div class="worker-components">
+                                    <div class="worker-item sidecar">
+                                        <div class="worker-name">Rust Sidecar</div>
+                                        <div class="worker-subtitle">[Standard Component]</div>
+                                        <div class="feature-dot">• 流量转发 & 计费</div>
+                                        <div class="feature-dot">• 熔断 & 遥测</div>
+                                        <div class="feature-dot">• 消除 Python GIL</div>
+                                    </div>
+                                    <div class="uds-connection">
+                                        <div class="uds-label">UDS/Local</div>
+                                        <div class="uds-sublabel">🔵 ④ ZeroCopy</div>
+                                    </div>
+                                    <div class="worker-item engine">
+                                        <div class="worker-name">Python Engine</div>
+                                        <div class="worker-subtitle">[Compute / Runtime]</div>
+                                        <div class="feature-dot">• vLLM / MindIE</div>
+                                        <div class="feature-dot">• TensorRT-LLM</div>
+                                        <div class="feature-dot">• Hardware Logic</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="flow-arrow down" data-label="Standard HAL Interface"></div>
+                        </div>
+
+                        <!-- Hardware Layer -->
+                        <div class="topo-layer hardware-layer">
+                            <div class="hardware-boxes">
+                                <div class="hw-box nvidia">
+                                    <div class="hw-icon">🎮</div>
+                                    <div class="hw-name">NVIDIA GPU</div>
+                                    <div class="hw-tech">CUDA</div>
+                                </div>
+                                <div class="hw-box ascend">
+                                    <div class="hw-icon">🔮</div>
+                                    <div class="hw-name">Ascend NPU</div>
+                                    <div class="hw-tech">CANN</div>
+                                </div>
+                                <div class="hw-box amd">
+                                    <div class="hw-icon">⚡</div>
+                                    <div class="hw-name">AMD / Intel</div>
+                                    <div class="hw-tech">XPU</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Open Source Tab -->
+        <div id="opensource-tab" class="tab-content">
+            <div class="architecture-section">
+                <h2 class="section-title">开源版架构 (Standard Core)</h2>
+                
+                <div class="card">
+                    <h3 class="card-title">核心理念：能力下放，架构统一</h3>
+                    <div class="card-content">
+                        <ul class="feature-list">
+                            <li class="feature-item"><strong>Rust Sidecar 标配：</strong>开源用户直接享受 Rust 高性能转发，无需 Python 性能瓶颈</li>
+                            <li class="feature-item"><strong>简化控制面：</strong>Coordinator 不加载高级调度插件，仅保留基础轮询</li>
+                            <li class="feature-item"><strong>轻量网关：</strong>Python Gateway 满足基础 API 需求，架构与企业版完全解耦</li>
+                            <li class="feature-item"><strong>完全兼容：</strong>Worker 镜像与企业版通用，随时可以无缝升级</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <h3 class="section-title">系统拓扑图</h3>
+                <div class="card architecture-diagram lite">
+                    <div class="diagram-legend">
+                        <span class="legend-item control-flow">🟢 控制流</span>
+                        <span class="legend-item data-flow">🔵 数据流</span>
+                    </div>
+                    <div class="topology-container">
+                        <!-- Client Layer -->
+                        <div class="topo-layer client-layer">
+                            <div class="topo-box client-box">
+                                <div class="box-title">客户端层 (Clients)</div>
+                                <div class="box-content">Web App / Mobile App / API Client</div>
+                                <div class="box-tech">HTTP/HTTPS / SSE</div>
+                            </div>
+                            <div class="flow-arrow down" data-label="① Request"></div>
+                        </div>
+
+                        <!-- API Gateway Layer -->
+                        <div class="topo-layer gateway-layer">
+                            <div class="layer-wrapper">
+                                <div class="layer-title">API 接入层 (Python Standard)</div>
+                                <div class="gateway-boxes lite">
+                                    <div class="topo-box gateway-box lite">
+                                        <div class="box-title">开源版：Python Gateway</div>
+                                        <div class="box-subtitle">FastAPI</div>
+                                        <div class="box-content">
+                                            <div class="feature-dot">• REST API (/v1/chat/*)</div>
+                                            <div class="feature-dot">• 基础 API Key 认证</div>
+                                            <div class="feature-dot">• 直连 Rust Sidecar</div>
+                                        </div>
+                                    </div>
+                                    <div class="gateway-storage lite">
+                                        <div class="mini-box cache-box">
+                                            <div class="mini-title">Redis Cache</div>
+                                            <div class="mini-content">单层缓存</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="flow-arrow down control" data-label="② Schedule Request"></div>
+                        </div>
+
+                        <!-- Coordinator Layer -->
+                        <div class="topo-layer coordinator-layer">
+                            <div class="topo-box coordinator-box lite">
+                                <div class="box-title">Coordinator (无插件模式)</div>
+                                <div class="coordinator-components lite">
+                                    <div class="component-item">
+                                        <div class="comp-name">轮询调度器</div>
+                                        <div class="comp-detail">Round-Robin</div>
+                                    </div>
+                                    <!-- Plugin Removed -->
+                                    <div class="component-item disabled">
+                                        <div class="comp-name">高级调度插件</div>
+                                        <div class="comp-detail">未加载</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="flow-arrow down data" data-label="③ Direct Stream (gRPC)"></div>
+                        </div>
+
+                        <!-- Worker Layer -->
+                        <div class="topo-layer worker-layer">
+                            <div class="topo-box worker-box">
+                                <div class="box-title">Unified Worker Pod (Standard)</div>
+                                <div class="worker-components">
+                                    <div class="worker-item sidecar">
+                                        <div class="worker-name">Rust Sidecar</div>
+                                        <div class="worker-subtitle">[Standard Component]</div>
+                                        <div class="feature-dot">• 流量转发 (开源)</div>
+                                        <div class="feature-dot">• 基础计数</div>
+                                    </div>
+                                    <div class="uds-connection">
+                                        <div class="uds-label">UDS/Local</div>
+                                        <div class="uds-sublabel">🔵 ④ ZeroCopy</div>
+                                    </div>
+                                    <div class="worker-item engine">
+                                        <div class="worker-name">Python Engine</div>
+                                        <div class="worker-subtitle">[Compute / Runtime]</div>
+                                        <div class="feature-dot">• vLLM / MindIE</div>
+                                        <div class="feature-dot">• 通用硬件接口</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="flow-arrow down" data-label="Standard HAL Interface"></div>
+                        </div>
+
+                        <!-- Hardware Layer -->
+                        <div class="topo-layer hardware-layer">
+                            <div class="hardware-boxes">
+                                <div class="hw-box nvidia">
+                                    <div class="hw-icon">🎮</div>
+                                    <div class="hw-name">NVIDIA GPU</div>
+                                    <div class="hw-tech">CUDA</div>
+                                </div>
+                                <div class="hw-box ascend">
+                                    <div class="hw-icon">🔮</div>
+                                    <div class="hw-name">Ascend NPU</div>
+                                    <div class="hw-tech">CANN</div>
+                                </div>
+                                <div class="hw-box amd">
+                                    <div class="hw-icon">⚡</div>
+                                    <div class="hw-name">AMD / Intel</div>
+                                    <div class="hw-tech">XPU</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="highlight-box">
+                    <h4>💡 社区版优势</h4>
+                    <p><strong>性能不妥协：</strong>开源版同样拥有 Rust Sidecar 带来的低延迟和零拷贝特性。</p>
+                    <p><strong>无缝升级：</strong>从开源版升级到企业版，无需重新部署 Worker 节点，只需更换网关和调度器插件。</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Comparison Section -->
+        <div class="architecture-section">
+            <h2 class="section-title">架构差异对比 (v3.0)</h2>
+            <div class="card">
+                <table class="comparison-table">
+                    <thead>
+                        <tr>
+                            <th>特性分类</th>
+                            <th>开源版 (Community Core)</th>
+                            <th>企业版 (Enterprise Full)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>执行层 (Worker)</strong></td>
+                            <td colspan="2" style="text-align: center; color: var(--accent-cyan);">✨ 统一架构：Rust Sidecar + Python Engine (完全一致)</td>
+                        </tr>
+                        <tr>
+                            <td><strong>接入层 (Gateway)</strong></td>
+                            <td>Python FastAPI (轻量级)</td>
+                            <td>Kotlin Spring WebFlux (企业级)</td>
+                        </tr>
+                        <tr>
+                            <td><strong>调度策略</strong></td>
+                            <td>Python 轮询 (Round-Robin)</td>
+                            <td>Python + <strong>Rust 拓扑感知插件</strong></td>
+                        </tr>
+                        <tr>
+                            <td><strong>数据持久化</strong></td>
+                            <td>内存 / 文件</td>
+                            <td>PostgreSQL (用户/审计/计费)</td>
+                        </tr>
+                        <tr>
+                            <td><strong>多租户与鉴权</strong></td>
+                            <td>API Key (单租户)</td>
+                            <td>OAuth2 / RBAC / 配额管理</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <footer>
+            <p>CY-LLM Engine Architecture v3.0 | Open Core Distributed AI Engine</p>
+            <p style="margin-top: 0.5rem; font-size: 0.85rem;">Philosophy: 统一内核 · 插件增强 · 无缝演进</p>
+        </footer>
+    </div>
+
+    <script>
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.getElementById(tabName + '-tab').classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        const observerOptions = {
+            threshold: 0.1,
+            rootMargin: '0px 0px -100px 0px'
+        };
+
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.style.animation = 'fadeInUp 0.6s ease-out forwards';
+                }
+            });
+        }, observerOptions);
+
+        document.querySelectorAll('.card, .layer-card, .flow-step').forEach(el => {
+            el.style.opacity = '0';
+            observer.observe(el);
+        });
+    </script>
+</body>
+</html>

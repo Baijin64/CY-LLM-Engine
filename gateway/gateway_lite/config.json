@@ -1,0 +1,5 @@
+{
+  "api_token": "",
+  "coordinator_grpc_addr": "127.0.0.1:50051",
+  "request_timeout_sec": 60
+}

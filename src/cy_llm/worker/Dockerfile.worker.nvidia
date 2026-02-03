@@ -1,0 +1,14 @@
+# Dockerfile.worker.nvidia
+# [部署] 基于 NVIDIA 容器（含 CUDA、cuDNN、NCCL、PyTorch）
+# 说明：占位 Dockerfile — 已添加基本 `FROM` 以消除 lint 警告。
+# 请根据目标 CUDA 版本替换为合适的 NVIDIA 基础镜像（示例使用 CUDA 12.1 运行时）。
+
+FROM nvidia/cuda:12.1.1-runtime-ubuntu24.04
+
+# 说明：占位镜像使用 CUDA 11.8 (cu118) 运行时，基于 Ubuntu 24.04 LTS。
+# 注意：用户提到 CUDA 为 conda 包版本 cu118；在镜像内可通过 Conda 安装对应的 PyTorch/CUDA 包（例如 conda 的 cudatoolkit 或匹配的 pytorch/cuda 包）。
+# 后续：安装 Python，并安装 cu121 对应的 PyTorch/依赖，然后复制应用代码。
+
+# 安全默认值：生产环境强制内部 token；仅本地开发可显式放行
+ENV CY_LLM_ENV=production
+ENV CY_LLM_ALLOW_INSECURE_INTERNAL_TOKEN=false
