@@ -5,11 +5,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("cargo:rerun-if-changed={}", proto_file);
 
-    // Compile protobuf files
+    // Compile protobuf files - write to OUT_DIR so `include_proto!` can find them
+    let out_dir = std::env::var("OUT_DIR")?;
     tonic_build::configure()
         .build_server(true)
         .build_client(true)
-        .out_dir("src/generated")
+        .out_dir(&out_dir)
         .compile(&[proto_file], &[proto_dir])?;
 
     Ok(())

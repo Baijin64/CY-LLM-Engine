@@ -1551,6 +1551,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "config",
+ "futures-core",
  "mockall",
  "prometheus",
  "prost",
