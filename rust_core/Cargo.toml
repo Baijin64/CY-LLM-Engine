@@ -56,6 +56,9 @@ pyo3 = { version = "0.20", features = ["extension-module"], optional = true }
 # Stream utilities
 tokio-stream = { version = "0.1", features = ["sync"] }
 
+# For Stream trait type erasure
+futures-core = "0.3"
+
 [build-dependencies]
 tonic-build = "0.11"
 

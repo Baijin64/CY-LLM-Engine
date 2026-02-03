@@ -5,6 +5,8 @@ use crate::health::{HealthChecker, WorkerStatus};
 use crate::metering::TokenCounter;
 use crate::metrics::{MetricsCollector, WorkerConnectionStatus};
 use std::sync::Arc;
+use std::pin::Pin;
+use futures_core::Stream;
 use tokio::sync::RwLock;
 use tonic::transport::{Channel, Uri};
 use tracing::{debug, error, info, warn};
@@ -106,7 +108,7 @@ impl WorkerProxy {
     pub async fn forward_stream_request(
         &self,
         request: tonic::Request<tonic::Streaming<StreamPredictRequest>>,
-    ) -> Result<tonic::Response<tonic::Streaming<StreamPredictResponse>>> {
+    ) -> Result<tonic::Response<Pin<Box<dyn Stream<Item = std::result::Result<StreamPredictResponse, tonic::Status>> + Send + Sync + 'static>>>> {
         let start_time = std::time::Instant::now();
 
         // 检查 Worker 连接状态
@@ -142,15 +144,40 @@ impl WorkerProxy {
         debug!("Forwarding stream request to Worker");
         self.metrics.active_connections.inc();
 
-        let response = client.stream_predict(request).await.map_err(|e| {
-            self.metrics.requests_failed.inc();
-            self.metrics.active_connections.dec();
-            error!("Failed to forward request to Worker: {}", e);
-            SidecarError::ProxyError(format!("Worker request failed: {}", e))
-        })?;
+        // 将入站流的 `Result<Message, Status>` 转为仅包含 `Message` 的 stream，转发给 Worker
+        let mut client_inbound = request.into_inner();
+        let (in_tx, in_rx) = tokio::sync::mpsc::channel::<StreamPredictRequest>(128);
+
+        // 将客户端消息转发到 worker 请求流
+        tokio::spawn(async move {
+            while let Ok(opt) = client_inbound.message().await {
+                match opt {
+                    Some(msg) => {
+                        if in_tx.send(msg).await.is_err() {
+                            warn!("Worker input channel closed");
+                            break;
+                        }
+                    }
+                    None => break,
+                }
+            }
+        });
+
+        // 使用 ReceiverStream 作为要发送到 Worker 的流
+        let worker_request_stream = tokio_stream::wrappers::ReceiverStream::new(in_rx);
+
+        let response = client
+            .stream_predict(tonic::Request::new(worker_request_stream))
+            .await
+            .map_err(|e| {
+                self.metrics.requests_failed.inc();
+                self.metrics.active_connections.dec();
+                error!("Failed to forward request to Worker: {}", e);
+                SidecarError::ProxyError(format!("Worker request failed: {}", e))
+            })?;
 
         // 包装响应流以进行 Token 计数
-        let mut inbound_stream = response.into_inner();
+        let mut worker_inbound = response.into_inner();
         let token_counter = Arc::clone(&self.token_counter);
         let metrics = Arc::clone(&self.metrics);
         let session_id = uuid::Uuid::new_v4().to_string();
@@ -159,13 +186,13 @@ impl WorkerProxy {
         let model_id = "unknown".to_string(); // 从请求中提取
         token_counter.start_session(model_id, None);
 
-        let (tx, rx) = tokio::sync::mpsc::channel(128);
+        let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<StreamPredictResponse, tonic::Status>>(128);
 
-        // 在后台任务中处理流
+        // 在后台任务中处理 worker 返回流
         tokio::spawn(async move {
             let mut total_tokens = 0u64;
 
-            while let Ok(Some(chunk)) = inbound_stream.message().await {
+            while let Ok(Some(chunk)) = worker_inbound.message().await {
                 // 计数 Token（假设每个 chunk 包含 1 个 token）
                 // TODO: 更准确的 token 计数逻辑
                 let token_count = chunk.chunk.len() as u64;
@@ -187,12 +214,13 @@ impl WorkerProxy {
         });
 
         let outbound_stream = tokio_stream::wrappers::ReceiverStream::new(rx);
+        let boxed_stream: Pin<Box<dyn Stream<Item = std::result::Result<StreamPredictResponse, tonic::Status>> + Send + Sync + 'static>> = Box::pin(outbound_stream);
 
         // 记录请求成功
         let duration = start_time.elapsed();
         self.metrics.record_request(true, duration.as_secs_f64());
 
-        Ok(tonic::Response::new(Box::pin(outbound_stream)))
+        Ok(tonic::Response::new(boxed_stream))
     }
 
     /// 启动后台健康检查

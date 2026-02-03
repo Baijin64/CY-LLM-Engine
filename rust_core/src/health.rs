@@ -1,6 +1,7 @@
 /// Worker 健康检查模块
 use crate::errors::{Result, SidecarError};
 use std::time::Duration;
+use std::sync::Arc;
 use tokio::time::sleep;
 use tracing::{debug, error, info, warn};
 
@@ -94,7 +95,7 @@ impl HealthChecker {
 
     /// 启动后台健康检查任务
     pub fn start_background_check(
-        self,
+        self: Arc<Self>,
         status_callback: impl Fn(WorkerStatus) + Send + 'static,
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
@@ -121,7 +122,6 @@ impl HealthChecker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs::File;
     use std::os::unix::net::UnixListener;
     use tempfile::TempDir;
 
