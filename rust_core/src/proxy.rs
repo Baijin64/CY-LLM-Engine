@@ -36,8 +36,8 @@ pub struct WorkerProxy {
     /// 健康检查器
     health_checker: Arc<HealthChecker>,
 
-    /// 当前 Worker 状态
-    worker_status: Arc<RwLock<WorkerStatus>>,
+    /// 当前 Worker 状态 (使用 std 锁以支持同步回调且避免 runtime 阻塞)
+    worker_status: Arc<std::sync::RwLock<WorkerStatus>>,
 }
 
 impl WorkerProxy {
@@ -63,7 +63,7 @@ impl WorkerProxy {
             token_counter,
             metrics,
             health_checker,
-            worker_status: Arc::new(RwLock::new(WorkerStatus::Disconnected)),
+            worker_status: Arc::new(std::sync::RwLock::new(WorkerStatus::Disconnected)),
         })
     }
 
@@ -96,8 +96,10 @@ impl WorkerProxy {
         *worker_client = Some(client);
 
         // 更新状态
-        let mut worker_status = self.worker_status.write().await;
-        *worker_status = WorkerStatus::Connected;
+        {
+            let mut worker_status = self.worker_status.write().unwrap();
+            *worker_status = WorkerStatus::Connected;
+        }
         self.metrics.set_worker_status(WorkerConnectionStatus::Connected);
 
         info!("Successfully connected to Worker");
@@ -108,12 +110,12 @@ impl WorkerProxy {
     pub async fn forward_stream_request(
         &self,
         request: tonic::Request<tonic::Streaming<StreamPredictRequest>>,
-    ) -> Result<tonic::Response<Pin<Box<dyn Stream<Item = std::result::Result<StreamPredictResponse, tonic::Status>> + Send + Sync + 'static>>>> {
+    ) -> Result<tonic::Response<Pin<Box<dyn Stream<Item = std::result::Result<StreamPredictResponse, tonic::Status>> + Send + 'static>>>> {
         let start_time = std::time::Instant::now();
 
         // 检查 Worker 连接状态
-        let worker_status = self.worker_status.read().await;
-        match *worker_status {
+        let status = *self.worker_status.read().unwrap();
+        match status {
             WorkerStatus::Disconnected => {
                 self.metrics.worker_connection_errors.inc();
                 return Err(SidecarError::WorkerDisconnected(
@@ -125,7 +127,6 @@ impl WorkerProxy {
             }
             WorkerStatus::Connected => {}
         }
-        drop(worker_status);
 
         // 获取 Worker 客户端
         let worker_client = self.worker_client.read().await;
@@ -214,7 +215,7 @@ impl WorkerProxy {
         });
 
         let outbound_stream = tokio_stream::wrappers::ReceiverStream::new(rx);
-        let boxed_stream: Pin<Box<dyn Stream<Item = std::result::Result<StreamPredictResponse, tonic::Status>> + Send + Sync + 'static>> = Box::pin(outbound_stream);
+        let boxed_stream: Pin<Box<dyn Stream<Item = std::result::Result<StreamPredictResponse, tonic::Status>> + Send + 'static>> = Box::pin(outbound_stream);
 
         // 记录请求成功
         let duration = start_time.elapsed();
@@ -229,8 +230,10 @@ impl WorkerProxy {
         let worker_status = Arc::clone(&self.worker_status);
 
         self.health_checker.clone().start_background_check(move |status| {
-            let mut worker_status = worker_status.blocking_write();
-            *worker_status = status;
+            {
+                let mut worker_status = worker_status.write().unwrap();
+                *worker_status = status;
+            }
 
             let metrics_status = match status {
                 WorkerStatus::Connected => WorkerConnectionStatus::Connected,

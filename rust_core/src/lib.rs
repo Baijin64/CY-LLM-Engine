@@ -12,6 +12,7 @@ pub mod metering;
 pub mod metrics;
 pub mod proxy;
 pub mod health;
+pub mod grpc_service;
 
 // Re-exports
 pub use config::SidecarConfig;
