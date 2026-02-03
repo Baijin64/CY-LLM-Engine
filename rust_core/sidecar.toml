@@ -1,0 +1,36 @@
+# Rust Sidecar 配置文件
+# Worker 数据面代理
+
+[server]
+# 外部 gRPC 监听地址（来自 Gateway 的请求）
+bind_addr = "0.0.0.0:50051"
+
+# 本地 Python Worker UDS 路径
+worker_uds = "unix:///tmp/cy_worker.sock"
+
+[metering]
+# Token 计费上报地址（可选，指向 Kotlin Backend 的计费服务）
+# billing_endpoint = "http://billing-service:8080/v1/usage"
+
+# 批量上报间隔（秒）
+batch_interval_secs = 10
+
+# 离线队列大小（当计费服务不可用时）
+offline_queue_size = 10000
+
+[health]
+# Worker 健康检查间隔（秒）
+check_interval_secs = 5
+
+# 重连等待时间（秒）
+reconnect_delay_secs = 2
+
+# 最大重连次数
+max_reconnect_attempts = 5
+
+[observability]
+# Prometheus 指标端口
+metrics_port = 9090
+
+# 日志级别 (trace, debug, info, warn, error)
+log_level = "info"
