@@ -243,20 +243,11 @@ class AiInferenceServicerImpl(AiInferenceServicer):
                     chunk_index += 1
 
                 # 发送结束标记
-                yield StreamPredictResponse(
-                    trace_id=trace_id,
-                    chunk="",
-                    end_of_stream=True,
-                    index=chunk_index,
-                )
-                
                 # 统计计算
                 end_time = time.perf_counter()
                 ttft_ms = (first_token_time - start_time) * 1000 if first_token_time else 0
                 
                 # 计算生成速度 (TPS)
-                # 优先使用 chunks 数量作为 token 计数（大多数引擎是 token-by-token）
-                # 注意：vLLM 某些模式可能是逐字符输出，这里做一个简单的启发式修正
                 gen_duration = end_time - first_token_time if first_token_time else (end_time - start_time)
                 gen_duration = max(gen_duration, 0.001)
                 
@@ -269,6 +260,15 @@ class AiInferenceServicerImpl(AiInferenceServicer):
                     tokens_count = tokens_count / 3.0 # 粗略估计字符到 token 的比例
                 
                 tps = tokens_count / gen_duration
+
+                yield StreamPredictResponse(
+                    trace_id=trace_id,
+                    chunk="",
+                    end_of_stream=True,
+                    index=chunk_index,
+                    ttft_ms=ttft_ms,
+                    tokens_per_sec=tps,
+                )
 
                 LOGGER.info(
                     "[%s] StreamPredict 完成: chunks=%d, speed=%.2f tok/s, ttft=%.2fms",

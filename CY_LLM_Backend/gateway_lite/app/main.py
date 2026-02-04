@@ -120,7 +120,7 @@ def require_token(authorization: Optional[str]) -> None:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
-async def stream_predict(prompt: str, model_id: str, params: ChatCompletionRequest) -> str:
+async def stream_predict(prompt: str, model_id: str, params: ChatCompletionRequest) -> dict:
     target = get_coordinator_addr()
     trace_id = str(uuid.uuid4())
     base_timeout = get_request_timeout()
@@ -147,6 +147,8 @@ async def stream_predict(prompt: str, model_id: str, params: ChatCompletionReque
         async with grpc.aio.insecure_channel(target) as channel:
             stub = ai_service_pb2_grpc.AiInferenceStub(channel)
             response_text = []
+            ttft_ms = 0.0
+            tps = 0.0
             
             async for resp in stub.StreamPredict(request_iter(), timeout=timeout):
                 chunk = resp.chunk
@@ -158,10 +160,17 @@ async def stream_predict(prompt: str, model_id: str, params: ChatCompletionReque
                 
                 response_text.append(chunk)
                 if resp.end_of_stream:
+                    ttft_ms = resp.ttft_ms
+                    tps = resp.tokens_per_sec
                     break
             
             # 只返回实际的模型响应，不包含加载进度信息
-            return "".join(response_text)
+            return {
+                "text": "".join(response_text),
+                "ttft_ms": ttft_ms,
+                "tps": tps,
+                "trace_id": trace_id
+            }
     except grpc.aio.AioRpcError as e:
         # 如果是超时错误，提供更详细的错误信息
         if e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
@@ -188,7 +197,8 @@ async def chat_completions(payload: ChatCompletionRequest, authorization: Option
 
     prompt = build_prompt(payload.messages)
     model_id = payload.model or "default"
-    completion = await stream_predict(prompt, model_id, payload)
+    result = await stream_predict(prompt, model_id, payload)
+    completion = result["text"]
 
     return {
         "id": f"chatcmpl-{uuid.uuid4().hex}",
@@ -202,4 +212,9 @@ async def chat_completions(payload: ChatCompletionRequest, authorization: Option
                 "finish_reason": "stop",
             }
         ],
+        "performance": {
+            "ttft_ms": result["ttft_ms"],
+            "tps": result["tps"],
+            "trace_id": result["trace_id"]
+        }
     }
