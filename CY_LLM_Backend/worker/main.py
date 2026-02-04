@@ -50,6 +50,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--max-new-tokens", type=int, default=256, help="一次 CLI 推理生成的最大 token 数。")
     parser.add_argument("--temperature", type=float, default=0.7, help="CLI 推理温度系数。")
     parser.add_argument("--serve", action="store_true", help="阻塞运行，等待上层 gRPC/HTTP 服务接入。")
+    parser.add_argument("--port", type=int, help="gRPC 监听端口（TCP）。如果指定，将优先使用 TCP。")
     parser.add_argument("--uds-path", type=str, default="/tmp/cy_worker.sock", help="Unix Domain Socket 路径。")
     return parser.parse_args()
 
@@ -116,7 +117,7 @@ def graceful_shutdown(server, timeout: int = 5) -> None:
         return
 
 
-def _serve_forever(server: InferenceServer, config: WorkerConfig, uds_path: str = "/tmp/cy_worker.sock") -> None:
+def _serve_forever(server: InferenceServer, config: WorkerConfig, uds_path: str = "/tmp/cy_worker.sock", port: Optional[int] = None) -> None:
     from worker.grpc_servicer import create_grpc_server  # type: ignore
 
     stop_event = threading.Event()
@@ -126,6 +127,7 @@ def _serve_forever(server: InferenceServer, config: WorkerConfig, uds_path: str 
         inference_server=server,
         config=config,
         uds_path=uds_path,
+        port=port,
     )
     grpc_server.start()
 
@@ -177,7 +179,7 @@ def main() -> None:
             return
 
     if args.serve:
-        _serve_forever(inference_server, config, uds_path=args.uds_path)
+        _serve_forever(inference_server, config, uds_path=args.uds_path, port=args.port)
     else:
         inference_server.shutdown()
 

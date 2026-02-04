@@ -213,6 +213,9 @@ class AiInferenceServicerImpl(AiInferenceServicer):
         enable_prompt_cache = spec.enable_prompt_cache or False
         prompt_cache_ttl = spec.prompt_cache_ttl
 
+        start_time = time.perf_counter()
+        first_token_time = None
+
         try:
             try:
                 chunk_index = 0
@@ -228,6 +231,9 @@ class AiInferenceServicerImpl(AiInferenceServicer):
                     enable_prompt_cache=enable_prompt_cache,
                     prompt_cache_ttl=prompt_cache_ttl,
                 ):
+                    if chunk_index == 0:
+                        first_token_time = time.perf_counter()
+
                     yield StreamPredictResponse(
                         trace_id=trace_id,
                         chunk=str(chunk),
@@ -243,7 +249,31 @@ class AiInferenceServicerImpl(AiInferenceServicer):
                     end_of_stream=True,
                     index=chunk_index,
                 )
-                LOGGER.info("[%s] StreamPredict 完成: chunks=%d", trace_id, chunk_index)
+                
+                # 统计计算
+                end_time = time.perf_counter()
+                ttft_ms = (first_token_time - start_time) * 1000 if first_token_time else 0
+                
+                # 计算生成速度 (TPS)
+                # 优先使用 chunks 数量作为 token 计数（大多数引擎是 token-by-token）
+                # 注意：vLLM 某些模式可能是逐字符输出，这里做一个简单的启发式修正
+                gen_duration = end_time - first_token_time if first_token_time else (end_time - start_time)
+                gen_duration = max(gen_duration, 0.001)
+                
+                # 默认 1 chunk = 1 token
+                tokens_count = chunk_index
+                
+                # 启发式修正：如果 chunks 太多且不是异步 vLLM，可能是逐字符输出
+                engine_type_str = str(engine_type).lower()
+                if "vllm" in engine_type_str and "async" not in engine_type_str:
+                    tokens_count = tokens_count / 3.0 # 粗略估计字符到 token 的比例
+                
+                tps = tokens_count / gen_duration
+
+                LOGGER.info(
+                    "[%s] StreamPredict 完成: chunks=%d, speed=%.2f tok/s, ttft=%.2fms",
+                    trace_id, chunk_index, tps, ttft_ms
+                )
             except Exception as exc:
                 if span is not None and Status is not None and StatusCode is not None:
                     span.record_exception(exc)
@@ -357,32 +387,24 @@ def create_grpc_server(
     inference_server: InferenceServer,
     config: WorkerConfig,
     uds_path: str = "/tmp/cy_worker.sock",
+    port: Optional[int] = None,
     max_workers: int = GRPCDefaults.DEFAULT_WORKERS,
     telemetry: Optional[Telemetry] = None,
     enable_training: bool = True,
 ) -> grpc.Server:
-    """创建并配置 gRPC 服务器（强制 UDS）
+    """创建并配置 gRPC 服务器
     
     Args:
         inference_server: 推理服务器实例
         config: Worker 配置
         uds_path: Unix Domain Socket 路径 (仅支持 Linux/WSL)
+        port: TCP 监听端口（如果提供则启用 TCP）
         max_workers: 线程池大小
         telemetry: 遥测实例
         enable_training: 是否启用训练服务
-    
-    Raises:
-        RuntimeError: 如果不在 Linux/WSL 环境下运行
     """
     import platform
     import os
-    
-    # 强制检查 Linux 环境
-    if platform.system() != "Linux":
-        raise RuntimeError(
-            f"CY-LLM Worker 仅支持 Linux/WSL 环境 (当前: {platform.system()})。"
-            "UDS 通信需要 Linux 内核支持。"
-        )
     
     server = grpc.server(
         futures.ThreadPoolExecutor(max_workers=max_workers),
@@ -416,15 +438,29 @@ def create_grpc_server(
         except ImportError as e:
             LOGGER.warning("训练服务未启用（依赖缺失）: %s", e)
 
-    # 清理旧的 socket 文件
-    if os.path.exists(uds_path):
-        os.unlink(uds_path)
-        LOGGER.info("已清理旧的 UDS 文件: %s", uds_path)
+    # 监听方式配置：优先 TCP (如果提供端口)，否则 UDS
+    if port:
+        server.add_insecure_port(f"0.0.0.0:{port}")
+        LOGGER.info("gRPC 已启用 TCP 监听: 0.0.0.0:%d", port)
     
-    # 强制使用 UDS (Unix Domain Socket)
-    server.add_insecure_port(f"unix://{uds_path}")
-    LOGGER.info("gRPC 已启用 UDS 通信: %s", uds_path)
-    LOGGER.warning("⚠️  已禁用 TCP 端口监听，仅通过 UDS 提供服务")
+    if uds_path:
+        # 针对 UDS 的环境检查
+        if platform.system() != "Linux":
+            if port:
+                LOGGER.warning("非 Linux 环境下无法启用 UDS，已自动回退到 TCP 模式。")
+            else:
+                raise RuntimeError(
+                    f"CY-LLM Worker 在非 Linux 环境下必须指定 --port (当前: {platform.system()})。"
+                    "UDS 通信需要 Linux 内核支持。"
+                )
+        else:
+            # 清理旧的 socket 文件
+            if os.path.exists(uds_path):
+                os.unlink(uds_path)
+                LOGGER.info("已清理旧的 UDS 文件: %s", uds_path)
+            
+            server.add_insecure_port(f"unix://{uds_path}")
+            LOGGER.info("gRPC 已启用 UDS 通信: %s", uds_path)
 
     return server
 

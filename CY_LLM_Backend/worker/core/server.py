@@ -329,6 +329,7 @@ class InferenceServer:
 		def _task() -> None:
 			start = time.time()
 			self._telemetry.track_request_start()
+			total_tokens = 0
 			try:
 				# 确保模型已加载（可能会触发加载）
 				engine = self.ensure_model(
@@ -345,10 +346,12 @@ class InferenceServer:
 				# 调用引擎的 infer，流式读取生成数据并入队
 				for chunk in engine.infer(prompt, **gen_kwargs):
 					response_queue.put(str(chunk))
+					total_tokens += 1
 					if enable_prompt_cache:
 						collected_chunks.append(str(chunk))
 				# 成功完成一次请求
 				self._telemetry.track_request_end(time.time() - start, success=True)
+				self._telemetry.track_token_generated(total_tokens)
 				response_queue.put(sentinel)
 			except Exception as exc:  # noqa: BLE001
 				# 发生异常时记录并通知外层处理

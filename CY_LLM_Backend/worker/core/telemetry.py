@@ -46,6 +46,7 @@ class Telemetry:
 		self._failed = 0
 		self._cache_hits = 0
 		self._cache_misses = 0
+		self._total_tokens = 0
 		self._latencies: Deque[float] = deque(maxlen=512)
 		self._latest_gpu = {"used_mb": 0.0, "total_mb": 0.0, "ts": 0.0}
 		self._initialized = True
@@ -186,5 +187,8 @@ class Telemetry:
 			"# HELP worker_gpu_total_mb GPU memory total in MB",
 			"# TYPE worker_gpu_total_mb gauge",
 			"worker_gpu_total_mb %.2f" % data["gpu_total_mb"],
+			"# HELP worker_tokens_total Total tokens generated",
+			"# TYPE worker_tokens_total counter",
+			"worker_tokens_total %.0f" % data["total_tokens"],
 		]
 		return "\n".join(lines)
