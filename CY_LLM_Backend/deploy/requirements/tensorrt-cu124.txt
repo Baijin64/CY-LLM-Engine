@@ -1,0 +1,17 @@
+# TensorRT-LLM Engine - CUDA 12.4
+# 适用于: NVIDIA Ampere/Ada GPU
+# 推荐用于: 极致低延迟推理（需预编译模型）
+
+-r base.txt
+
+# PyTorch with CUDA 12.4
+--extra-index-url https://download.pytorch.org/whl/cu124
+torch==2.9.0
+
+# TensorRT
+# 注意: tensorrt-llm 需要从 NVIDIA PyPI 安装
+# pip install tensorrt-llm==0.9.0 --extra-index-url https://pypi.nvidia.com
+tensorrt-llm==0.9.0
+
+# gRPC (精确版本)
+grpcio==1.76.0

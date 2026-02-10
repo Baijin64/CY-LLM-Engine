@@ -37,6 +37,21 @@ cd CY-LLM-Engine
 
 #### 2. 安装 Python 依赖
 
+**方式一：使用智能依赖管理（推荐）**
+
+```bash
+# 检测硬件并自动推荐依赖
+python -m CY_LLM_Backend.worker.deps detect
+
+# 查看可用配置
+python -m CY_LLM_Backend.worker.deps list
+
+# 根据硬件安装对应依赖（示例：NVIDIA + vLLM）
+pip install -r CY_LLM_Backend/deploy/requirements/vllm-cu124.txt
+```
+
+**方式二：传统方式**
+
 ```bash
 # 创建虚拟环境
 python -m venv .venv

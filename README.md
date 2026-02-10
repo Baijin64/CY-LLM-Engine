@@ -33,6 +33,7 @@
 
 | 文件 | 描述 |
 |------|------|
+| [docs/refactor/cy-llm-engine/RefactorChanges.md](./docs/refactor/cy-llm-engine/RefactorChanges.md) | **重构说明 (2026-02)** - 目录合并、依赖管理优化 |
 | [docs/HISTORY/MIGRATION_SUMMARY.md](./docs/HISTORY/MIGRATION_SUMMARY.md) | EW_AI_Backend → CY_LLM_Backend 迁移总结 |
 | [docs/HISTORY/PHASE2_3_UPGRADE_REPORT.md](./docs/HISTORY/PHASE2_3_UPGRADE_REPORT.md) | Phase 2 & 3 优化升级报告 |
 

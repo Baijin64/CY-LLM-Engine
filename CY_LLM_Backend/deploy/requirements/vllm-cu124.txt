@@ -1,0 +1,27 @@
+# vLLM Engine - CUDA 12.4
+# 适用于: NVIDIA Ampere/Ada/Turing GPU
+# 推荐用于: 生产环境高吞吐推理
+
+-r base.txt
+
+# PyTorch with CUDA 12.4
+--extra-index-url https://download.pytorch.org/whl/cu124
+torch==2.9.0
+torchvision==0.24.0
+torchaudio==2.9.0
+
+# vLLM Core
+vllm==0.12.0
+
+# Performance
+accelerate==1.12.0
+triton==3.5.0
+bitsandbytes==0.48.2
+
+# gRPC (精确版本)
+grpcio==1.76.0
+
+# Training (optional)
+peft>=0.7.0
+trl>=0.7.0
+sentencepiece>=0.2.0
