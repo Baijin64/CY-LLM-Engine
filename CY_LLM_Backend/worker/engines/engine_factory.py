@@ -20,10 +20,15 @@ from __future__ import annotations
 
 import importlib
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional, Type, Union
 
-from ..config.config_loader import HardwareProfile, WorkerConfig, detect_hardware, load_worker_config
+from ..config.config_loader import (
+    HardwareProfile,
+    WorkerConfig,
+    detect_hardware,
+    load_worker_config,
+)
 from .abstract_engine import BaseEngine
 
 LOGGER = logging.getLogger("cy_llm.worker.engines.factory")
@@ -33,16 +38,18 @@ LOGGER = logging.getLogger("cy_llm.worker.engines.factory")
 # 引擎注册信息
 # ============================================================================
 
+
 @dataclass
 class EngineInfo:
     """引擎注册信息"""
+
     engine_type: str
     module_path: str  # 格式: "module.path:ClassName" 或直接是类
     description: str = ""
     platform: str = "any"  # cuda, ascend, cpu, any
     priority: int = 0  # 同平台下的优先级（越高越优先）
     is_builtin: bool = True  # 是否为内置引擎
-    
+
     @property
     def class_name(self) -> str:
         if isinstance(self.module_path, str) and ":" in self.module_path:
@@ -54,36 +61,38 @@ class EngineInfo:
 # 引擎注册表（支持动态注册）
 # ============================================================================
 
+
 class EngineRegistry:
     """
     引擎注册表（单例）
-    
+
     支持：
       - 内置引擎注册
       - 第三方引擎动态注册
       - 按平台筛选
       - 延迟导入
     """
-    _instance: Optional['EngineRegistry'] = None
-    
-    def __new__(cls) -> 'EngineRegistry':
+
+    _instance: Optional["EngineRegistry"] = None
+
+    def __new__(cls) -> "EngineRegistry":
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._initialized = False
         return cls._instance
-    
+
     def __init__(self):
         if self._initialized:
             return
-        
+
         self._engines: Dict[str, EngineInfo] = {}
         self._loaded_classes: Dict[str, Type[BaseEngine]] = {}
         self._hooks: List[Callable[[str, EngineInfo], None]] = []
-        
+
         # 注册内置引擎
         self._register_builtin_engines()
         self._initialized = True
-    
+
     def _register_builtin_engines(self):
         """注册内置引擎"""
         builtin = [
@@ -109,7 +118,6 @@ class EngineRegistry:
                 platform="cuda",
                 priority=80,
             ),
-            
             # 华为 Ascend 平台
             EngineInfo(
                 engine_type="ascend-vllm",
@@ -125,7 +133,6 @@ class EngineRegistry:
                 platform="ascend",
                 priority=80,
             ),
-            
             # 旧版兼容别名
             EngineInfo(
                 engine_type="nvidia",
@@ -163,10 +170,10 @@ class EngineRegistry:
                 priority=10,
             ),
         ]
-        
+
         for info in builtin:
             self._engines[info.engine_type] = info
-    
+
     def register(
         self,
         engine_type: str,
@@ -178,7 +185,7 @@ class EngineRegistry:
     ) -> None:
         """
         注册引擎。
-        
+
         Args:
             engine_type: 引擎类型标识符，如 "my-engine"
             module_path: 模块路径 "package.module:ClassName" 或引擎类
@@ -186,18 +193,18 @@ class EngineRegistry:
             platform: 目标平台 (cuda/ascend/cpu/any)
             priority: 优先级（同平台下越高越优先）
             overwrite: 是否覆盖已有注册
-            
+
         Raises:
             ValueError: 引擎已存在且未允许覆盖
         """
         engine_type = engine_type.lower().strip()
-        
+
         if engine_type in self._engines and not overwrite:
             raise ValueError(
                 f"引擎 '{engine_type}' 已注册。"
                 f"使用 overwrite=True 覆盖，或使用 unregister() 先移除。"
             )
-        
+
         # 如果传入的是类，直接缓存
         if isinstance(module_path, type):
             if not issubclass(module_path, BaseEngine):
@@ -206,7 +213,7 @@ class EngineRegistry:
             module_path_str = f"{module_path.__module__}:{module_path.__name__}"
         else:
             module_path_str = module_path
-        
+
         info = EngineInfo(
             engine_type=engine_type,
             module_path=module_path_str,
@@ -215,10 +222,10 @@ class EngineRegistry:
             priority=priority,
             is_builtin=False,
         )
-        
+
         self._engines[engine_type] = info
         LOGGER.info("注册引擎: %s (%s) [%s]", engine_type, description, platform)
-        
+
         # 触发钩子
         for hook in self._hooks:
             try:
@@ -228,75 +235,69 @@ class EngineRegistry:
 
         if isinstance(module_path, type):
             self._loaded_classes[engine_type] = module_path
-    
+
     def unregister(self, engine_type: str) -> bool:
         """
         移除引擎注册。
-        
+
         Args:
             engine_type: 引擎类型
-            
+
         Returns:
             是否成功移除
         """
         engine_type = engine_type.lower().strip()
         if engine_type in self._engines:
-            info = self._engines.pop(engine_type)
+            self._engines.pop(engine_type)
             self._loaded_classes.pop(engine_type, None)
             LOGGER.info("移除引擎注册: %s", engine_type)
             return True
         return False
-    
+
     def get(self, engine_type: str) -> Optional[EngineInfo]:
         """获取引擎信息"""
         return self._engines.get(engine_type.lower().strip())
-    
+
     def list_all(self) -> Dict[str, EngineInfo]:
         """列出所有注册的引擎"""
         return dict(self._engines)
-    
+
     def list_by_platform(self, platform: str) -> List[EngineInfo]:
         """按平台筛选引擎，按优先级排序"""
-        engines = [
-            info for info in self._engines.values()
-            if info.platform in (platform, "any")
-        ]
+        engines = [info for info in self._engines.values() if info.platform in (platform, "any")]
         return sorted(engines, key=lambda x: -x.priority)
-    
+
     def get_class(self, engine_type: str) -> Type[BaseEngine]:
         """
         获取引擎类（延迟导入）。
-        
+
         Args:
             engine_type: 引擎类型
-            
+
         Returns:
             引擎类
-            
+
         Raises:
             ValueError: 未知的引擎类型
             ImportError: 导入失败
         """
         engine_type = engine_type.lower().strip()
-        
+
         # 检查缓存
         if engine_type in self._loaded_classes:
             return self._loaded_classes[engine_type]
-        
+
         # 获取注册信息
         info = self._engines.get(engine_type)
         if info is None:
             available = ", ".join(sorted(self._engines.keys()))
-            raise ValueError(
-                f"未知的引擎类型: '{engine_type}'。\n"
-                f"可用选项: {available}"
-            )
-        
+            raise ValueError(f"未知的引擎类型: '{engine_type}'。\n可用选项: {available}")
+
         # 延迟导入
         engine_cls = _lazy_import_engine(info.module_path)
         self._loaded_classes[engine_type] = engine_cls
         return engine_cls
-    
+
     def add_hook(self, hook: Callable[[str, EngineInfo], None]) -> None:
         """添加引擎注册钩子（在新引擎注册时调用）"""
         self._hooks.append(hook)
@@ -318,8 +319,9 @@ ENGINE_REGISTRY: Dict[str, str] = {
 }
 
 # 默认引擎优先级（按硬件自动选择时使用）
+# 优化：CUDA平台默认使用异步引擎以获得真正的流式性能和更低TTFT
 DEFAULT_ENGINE_PRIORITY = {
-    "cuda": "cuda-vllm",
+    "cuda": "cuda-vllm-async",  # 优化后：使用AsyncLLMEngine实现真正流式
     "ascend": "ascend-vllm",
 }
 
@@ -334,7 +336,7 @@ def register_engine(
 ) -> None:
     """
     注册第三方引擎（公开 API）。
-    
+
     Args:
         engine_type: 引擎类型标识符
         module_path: 模块路径 "package.module:ClassName" 或引擎类
@@ -342,7 +344,7 @@ def register_engine(
         platform: 目标平台
         priority: 优先级
         overwrite: 是否覆盖已有注册
-        
+
     示例:
         >>> from worker.engines import register_engine
         >>> register_engine(
@@ -362,7 +364,8 @@ def register_engine(
     )
     # 更新兼容字典
     ENGINE_REGISTRY[engine_type] = (
-        module_path if isinstance(module_path, str) 
+        module_path
+        if isinstance(module_path, str)
         else f"{module_path.__module__}:{module_path.__name__}"
     )
 
@@ -414,19 +417,19 @@ def get_engine(engine_type: str, *args, **kwargs) -> Optional[BaseEngine]:
 def _lazy_import_engine(engine_path: str) -> type:
     """
     延迟导入引擎类。
-    
+
     Args:
         engine_path: 格式为 "module.path:ClassName"
-        
+
     Returns:
         引擎类（未实例化）
-        
+
     Raises:
         ImportError: 模块导入失败
         AttributeError: 类不存在
     """
     module_path, class_name = engine_path.rsplit(":", 1)
-    
+
     try:
         module = importlib.import_module(module_path)
         engine_cls = getattr(module, class_name)
@@ -435,11 +438,9 @@ def _lazy_import_engine(engine_path: str) -> type:
     except ImportError as e:
         LOGGER.error("无法导入引擎模块 %s: %s", module_path, e)
         raise ImportError(
-            f"引擎 '{class_name}' 的依赖未安装。"
-            f"请检查是否安装了对应的推理框架。\n"
-            f"原始错误: {e}"
+            f"引擎 '{class_name}' 的依赖未安装。请检查是否安装了对应的推理框架。\n原始错误: {e}"
         ) from e
-    except AttributeError as e:
+    except AttributeError:
         LOGGER.error("模块 %s 中找不到类 %s", module_path, class_name)
         raise
 
@@ -447,26 +448,26 @@ def _lazy_import_engine(engine_path: str) -> type:
 def create_engine(engine_type: str, **kwargs) -> BaseEngine:
     """
     按类型创建推理引擎实例（延迟导入）。
-    
+
     Args:
         engine_type: 引擎类型标识符，如 "cuda-vllm", "ascend-mindie" 等
         **kwargs: 传递给引擎构造函数的参数
-        
+
     Returns:
         BaseEngine 实例
-        
+
     Raises:
         ValueError: 未知的引擎类型
         ImportError: 引擎依赖未安装
-        
+
     示例:
         >>> engine = create_engine("cuda-vllm")
         >>> engine = create_engine("ascend-mindie", device_id=0)
     """
     engine_type_normalized = engine_type.lower().strip()
-    
+
     LOGGER.info("正在加载引擎: %s", engine_type_normalized)
-    
+
     engine_cls = _registry.get_class(engine_type_normalized)
     return engine_cls(**kwargs)
 
@@ -474,15 +475,15 @@ def create_engine(engine_type: str, **kwargs) -> BaseEngine:
 def detect_default_engine_type(hardware: Optional[HardwareProfile] = None) -> str:
     """
     根据硬件自动检测推荐的引擎类型。
-    
+
     Args:
         hardware: 硬件配置，如不提供则自动检测
-        
+
     Returns:
         推荐的引擎类型字符串
     """
     hardware = hardware or detect_hardware()
-    
+
     if hardware.has_ascend:
         return DEFAULT_ENGINE_PRIORITY["ascend"]
     elif hardware.has_cuda:
@@ -496,10 +497,10 @@ def detect_default_engine_type(hardware: Optional[HardwareProfile] = None) -> st
 def detect_default_engine(hardware: Optional[HardwareProfile] = None) -> BaseEngine:
     """
     创建一个与当前硬件最匹配的引擎实例。
-    
+
     Args:
         hardware: 硬件配置，如不提供则自动检测
-        
+
     Returns:
         BaseEngine 实例
     """
@@ -510,10 +511,10 @@ def detect_default_engine(hardware: Optional[HardwareProfile] = None) -> BaseEng
 def create_engine_from_config(config: Optional[WorkerConfig] = None) -> BaseEngine:
     """
     利用 WorkerConfig（或自动加载）生成对应的引擎。
-    
+
     Args:
         config: Worker 配置，如不提供则自动加载
-        
+
     Returns:
         BaseEngine 实例
     """
@@ -524,23 +525,20 @@ def create_engine_from_config(config: Optional[WorkerConfig] = None) -> BaseEngi
 def list_available_engines() -> Dict[str, str]:
     """
     列出所有可用的引擎类型及其描述。
-    
+
     Returns:
         引擎类型到描述的映射
     """
-    return {
-        info.engine_type: info.description
-        for info in _registry.list_all().values()
-    }
+    return {info.engine_type: info.description for info in _registry.list_all().values()}
 
 
 def list_engines_by_platform(platform: str) -> List[EngineInfo]:
     """
     按平台列出引擎（按优先级排序）。
-    
+
     Args:
         platform: cuda, ascend, cpu, any
-        
+
     Returns:
         引擎信息列表
     """
@@ -550,10 +548,10 @@ def list_engines_by_platform(platform: str) -> List[EngineInfo]:
 def check_engine_available(engine_type: str) -> bool:
     """
     检查指定引擎是否可用（依赖是否已安装）。
-    
+
     Args:
         engine_type: 引擎类型
-        
+
     Returns:
         True 如果引擎可用，否则 False
     """
@@ -561,7 +559,7 @@ def check_engine_available(engine_type: str) -> bool:
     info = _registry.get(engine_type_normalized)
     if info is None:
         return False
-    
+
     try:
         _registry.get_class(engine_type_normalized)
         return True
@@ -570,4 +568,3 @@ def check_engine_available(engine_type: str) -> bool:
 
 
 # 添加导入到 List
-from typing import List

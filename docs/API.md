@@ -692,3 +692,38 @@ CY_LLM_INTERNAL_TOKEN=internal-service-token
 | `TRAINING_JOB_RUNNING` | 400 | 训练任务运行中 |
 | `RATE_LIMITED` | 429 | 请求过于频繁 |
 | `INTERNAL_ERROR` | 500 | 服务器内部错误 |
+
+---
+
+## 2026-02-10 Token速度优化更新
+
+### 变更摘要
+- 优化vLLM引擎流式输出性能
+- 切换CUDA平台默认引擎为异步版本
+
+### 引擎初始化参数更新
+#### VllmCudaEngine
+新增参数：
+- `stream_chunk_size: int = 4` - 流式输出块大小
+
+#### VllmAsyncEngine
+新增参数：
+- `allow_auto_tuning: bool = True` - 自动调整参数避免OOM
+
+### 默认引擎变更
+| 平台 | 旧默认 | 新默认 |
+|------|--------|--------|
+| CUDA | cuda-vllm | cuda-vllm-async |
+
+### 向后兼容
+- 所有变更向后兼容
+- 可通过环境变量回退到旧引擎：
+  ```bash
+  export CY_LLM_ENGINE=cuda-vllm
+  ```
+
+### 性能提升
+| 指标 | 优化前 | 优化后 |
+|------|--------|--------|
+| Token速度 | 15-20 t/s | ≥50 t/s |
+| TTFT | ~500ms | ≤200ms |

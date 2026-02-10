@@ -35,26 +35,24 @@ def _ensure_vllm_imported():
     if not _vllm_imported:
         try:
             from vllm import LLM, SamplingParams
+
             _LLM = LLM
             _SamplingParams = SamplingParams
             _vllm_imported = True
             LOGGER.info("vLLM 模块加载成功")
         except ImportError as e:
-            raise ImportError(
-                "vLLM 未安装。请运行: pip install vllm\n"
-                f"原始错误: {e}"
-            ) from e
+            raise ImportError(f"vLLM 未安装。请运行: pip install vllm\n原始错误: {e}") from e
 
 
 class VllmCudaEngine(BaseEngine):
     """
     基于 vLLM 的 NVIDIA CUDA 推理引擎。
-    
+
     特点：
       - 高性能：PagedAttention + Continuous Batching
       - 多 LoRA：支持动态切换多个 LoRA 适配器
       - 量化支持：AWQ, GPTQ, FP8 等
-      
+
     使用示例：
         >>> engine = VllmCudaEngine()
         >>> engine.load_model("deepseek-ai/deepseek-llm-7b-chat")
@@ -73,7 +71,8 @@ class VllmCudaEngine(BaseEngine):
         enable_prefix_caching: bool = False,
         kv_cache_dtype: Optional[str] = None,
         allow_auto_tuning: bool = True,
-        **kwargs
+        stream_chunk_size: int = 4,  # 新增: 流式输出块大小
+        **kwargs,
     ) -> None:
         """
         初始化 vLLM CUDA 引擎。
@@ -88,6 +87,7 @@ class VllmCudaEngine(BaseEngine):
             enable_prefix_caching: 启用前缀缓存（Automatic Prefix Caching）
             kv_cache_dtype: KV Cache 数据类型，"auto" 或 "fp8"
             allow_auto_tuning: 是否允许自动调整参数以避免 OOM（默认 True）
+            stream_chunk_size: 流式输出的块大小（默认 4 个字符/块）
         """
         _ensure_vllm_imported()
 
@@ -98,13 +98,13 @@ class VllmCudaEngine(BaseEngine):
             if allow_auto_tuning:
                 LOGGER.warning(
                     "gpu_memory_utilization=%.2f 过高，可能导致 OOM。自动调整为 0.85",
-                    gpu_memory_utilization
+                    gpu_memory_utilization,
                 )
                 gpu_memory_utilization = 0.85
             else:
                 LOGGER.warning(
                     "gpu_memory_utilization=%.2f 过高，可能导致 OOM（allow_auto_tuning=False，保持原值）",
-                    gpu_memory_utilization
+                    gpu_memory_utilization,
                 )
 
         self.tensor_parallel_size = tensor_parallel_size
@@ -115,13 +115,16 @@ class VllmCudaEngine(BaseEngine):
         self.max_loras = max_loras
         self.enable_prefix_caching = enable_prefix_caching
         self.kv_cache_dtype = kv_cache_dtype
-        
+        self.stream_chunk_size = max(1, stream_chunk_size)  # 确保至少为1
+
         # 移除 vLLM 不支持的参数，避免传递给 EngineArgs 时报错
         kwargs.pop("use_4bit", None)
-        
+
         # vLLM 不支持 bitsandbytes 量化字符串（它有自己的量化枚举）
         if kwargs.get("quantization") == "bitsandbytes":
-            LOGGER.warning("vLLM 引擎不支持 bitsandbytes 量化，已忽略。请使用 AWQ/GPTQ 或切换到 nvidia 引擎。")
+            LOGGER.warning(
+                "vLLM 引擎不支持 bitsandbytes 量化，已忽略。请使用 AWQ/GPTQ 或切换到 nvidia 引擎。"
+            )
             kwargs.pop("quantization")
 
         self.extra_kwargs = kwargs
@@ -132,8 +135,12 @@ class VllmCudaEngine(BaseEngine):
 
         LOGGER.info(
             "VllmCudaEngine 初始化: tp=%d, mem=%.2f, quant=%s, lora=%s, prefix_cache=%s, kv_dtype=%s",
-            tensor_parallel_size, gpu_memory_utilization, quantization, enable_lora,
-            enable_prefix_caching, kv_cache_dtype
+            tensor_parallel_size,
+            gpu_memory_utilization,
+            quantization,
+            enable_lora,
+            enable_prefix_caching,
+            kv_cache_dtype,
         )
 
     def load_model(
@@ -143,11 +150,11 @@ class VllmCudaEngine(BaseEngine):
         skip_vram_check: bool = False,
         interactive: bool = False,
         load_mode: str = "check_and_load",
-        **kwargs
+        **kwargs,
     ) -> None:
         """
         加载模型到 GPU。
-        
+
         Args:
             model_path: HuggingFace 模型 ID 或本地路径
             adapter_path: LoRA 适配器路径（可选）
@@ -165,11 +172,11 @@ class VllmCudaEngine(BaseEngine):
                 - gpu_memory_utilization: 覆盖实例配置的显存利用率
         """
         LOGGER.info("正在加载模型: %s", model_path)
-        
+
         # === 使用 ModelManager 进行模型准备 ===
         try:
             from worker.utils.model_manager import ModelManager, LoadMode, QuantizationType
-            
+
             # 映射加载模式
             mode_map = {
                 "check_only": LoadMode.CHECK_ONLY,
@@ -177,42 +184,42 @@ class VllmCudaEngine(BaseEngine):
                 "async_load": LoadMode.ASYNC_LOAD,
             }
             mode = mode_map.get(load_mode, LoadMode.CHECK_AND_LOAD)
-            
+
             # 创建模型管理器
             manager = ModelManager(
                 engine_type="vllm",
                 stall_threshold_seconds=180.0,  # 3 分钟停滞阈值
                 timeout_seconds=600.0,  # 10 分钟总超时
             )
-            
+
             # 准备模型（检测 -> 下载 -> 验证 -> 量化选择）
             resolved_path, selected_quant = manager.prepare_model(
                 model_id=model_path,
                 mode=mode,
                 interactive=interactive,
             )
-            
+
             # 使用解析后的本地路径
             model_path = str(resolved_path)
             LOGGER.info("使用模型路径: %s", model_path)
-            
+
             # 如果选择了量化，更新配置
             if selected_quant and selected_quant != QuantizationType.NONE:
                 quant_value = selected_quant.value
                 if quant_value in ["awq", "gptq", "fp8"]:
                     kwargs.setdefault("quantization", quant_value)
                     LOGGER.info("应用量化配置: %s", quant_value)
-            
+
             # 仅检查模式，直接返回
             if mode == LoadMode.CHECK_ONLY:
                 LOGGER.info("✓ 模型检查完成（仅检查模式）")
                 return
-                
+
         except ImportError:
             LOGGER.warning("ModelManager 未找到，使用传统加载方式")
         except Exception as e:
             LOGGER.warning("ModelManager 准备失败: %s，使用传统加载方式", e)
-        
+
         # 从 kwargs 提取可覆盖的配置
         max_model_len = kwargs.pop("max_model_len", None) or self.max_model_len
         tensor_parallel_size = kwargs.pop("tensor_parallel_size", None) or self.tensor_parallel_size
@@ -220,7 +227,9 @@ class VllmCudaEngine(BaseEngine):
         if enable_prefix_caching is None:
             enable_prefix_caching = self.enable_prefix_caching
         kv_cache_dtype = kwargs.pop("kv_cache_dtype", None) or self.kv_cache_dtype
-        gpu_memory_utilization = kwargs.pop("gpu_memory_utilization", None) or self.gpu_memory_utilization
+        gpu_memory_utilization = (
+            kwargs.pop("gpu_memory_utilization", None) or self.gpu_memory_utilization
+        )
         quantization = kwargs.pop("quantization", None) or self.quantization
 
         # === VRAM 预检查 ===
@@ -268,15 +277,18 @@ class VllmCudaEngine(BaseEngine):
                             gpu_memory_utilization = optimized["gpu_memory_utilization"]
                             LOGGER.warning(
                                 "⚙️  自动调整 gpu_memory_utilization: %.2f -> %.2f",
-                                old_util, gpu_memory_utilization
+                                old_util,
+                                gpu_memory_utilization,
                             )
 
-                        if "max_model_len" in optimized and max_model_len != optimized["max_model_len"]:
+                        if (
+                            "max_model_len" in optimized
+                            and max_model_len != optimized["max_model_len"]
+                        ):
                             old_len = max_model_len or 2048
                             max_model_len = optimized["max_model_len"]
                             LOGGER.warning(
-                                "⚙️  自动调整 max_model_len: %d -> %d",
-                                old_len, max_model_len
+                                "⚙️  自动调整 max_model_len: %d -> %d", old_len, max_model_len
                             )
 
                         # 显示优化建议
@@ -287,7 +299,7 @@ class VllmCudaEngine(BaseEngine):
 
             except ImportError:
                 LOGGER.warning("vram_optimizer 未找到，跳过 VRAM 检查")
-        
+
         # 合并配置
         llm_kwargs = {
             "model": model_path,
@@ -296,7 +308,7 @@ class VllmCudaEngine(BaseEngine):
             "trust_remote_code": True,
             "dtype": "auto",
         }
-        
+
         if max_model_len:
             llm_kwargs["max_model_len"] = max_model_len
 
@@ -304,16 +316,16 @@ class VllmCudaEngine(BaseEngine):
             llm_kwargs["enable_lora"] = True
             llm_kwargs["max_loras"] = self.max_loras
             llm_kwargs["max_lora_rank"] = kwargs.get("max_lora_rank", 64)
-        
+
         # KV Cache 优化配置
         if enable_prefix_caching:
             llm_kwargs["enable_prefix_caching"] = True
             LOGGER.info("启用 Automatic Prefix Caching (APC)")
-            
+
         if kv_cache_dtype:
             llm_kwargs["kv_cache_dtype"] = kv_cache_dtype
             LOGGER.info("KV Cache 数据类型: %s", kv_cache_dtype)
-            
+
         # 量化配置（vLLM 支持 AWQ/GPTQ/FP8/bitsandbytes）
         if quantization:
             valid_vllm_quant = ["awq", "gptq", "fp8", "fp8_e5m2", "bitsandbytes"]
@@ -339,6 +351,7 @@ class VllmCudaEngine(BaseEngine):
 
         try:
             from worker.utils.vram_optimizer import progressive_retry_configs
+
             retry_configs = progressive_retry_configs(base_config)
         except ImportError:
             # 如果 vram_optimizer 不可用，只使用原始配置
@@ -369,6 +382,7 @@ class VllmCudaEngine(BaseEngine):
                 LOGGER.info("📥 步骤 1/3: 初始化 vLLM 引擎配置")
 
                 import time
+
                 start_time = time.time()
 
                 # 尝试加载模型
@@ -409,6 +423,7 @@ class VllmCudaEngine(BaseEngine):
                     # 清理显存
                     try:
                         import torch
+
                         torch.cuda.empty_cache()
                         gc.collect()
                     except Exception:
@@ -430,41 +445,38 @@ class VllmCudaEngine(BaseEngine):
     def load_lora(self, adapter_path: str, lora_name: str = "default") -> None:
         """
         加载 LoRA 适配器。
-        
+
         Args:
             adapter_path: LoRA 适配器路径
             lora_name: 适配器名称（用于后续切换）
         """
         if not self.enable_lora:
             raise RuntimeError("LoRA 未启用，请在初始化时设置 enable_lora=True")
-            
+
         if self._llm is None:
             raise RuntimeError("请先调用 load_model() 加载基座模型")
-            
+
         LOGGER.info("加载 LoRA 适配器: %s as '%s'", adapter_path, lora_name)
         # vLLM 的 LoRA 通过请求时指定，这里只记录路径
         self._loaded_loras[lora_name] = adapter_path
 
     def infer(
-        self,
-        prompt: str,
-        lora_name: Optional[str] = None,
-        **kwargs
+        self, prompt: str, lora_name: Optional[str] = None, **kwargs
     ) -> Generator[str, None, None]:
         """
         流式推理。
-        
+
         Args:
             prompt: 输入提示
             lora_name: 使用的 LoRA 适配器名称
             **kwargs: 生成参数（temperature, top_p, max_tokens 等）
-            
+
         Yields:
             生成的文本 token
         """
         if self._llm is None:
             raise RuntimeError("模型未加载，请先调用 load_model()")
-            
+
         # 构建采样参数
         sampling_params = _SamplingParams(
             temperature=kwargs.get("temperature", 0.7),
@@ -473,13 +485,14 @@ class VllmCudaEngine(BaseEngine):
             repetition_penalty=kwargs.get("repetition_penalty", 1.1),
             stop=kwargs.get("stop", None),
         )
-        
+
         # 构建请求参数
         request_kwargs = {"sampling_params": sampling_params}
-        
+
         # 如果指定了 LoRA
         if lora_name and lora_name in self._loaded_loras:
             from vllm.lora.request import LoRARequest
+
             lora_path = self._loaded_loras[lora_name]
             # vLLM 使用 LoRARequest 指定适配器
             request_kwargs["lora_request"] = LoRARequest(
@@ -487,44 +500,41 @@ class VllmCudaEngine(BaseEngine):
                 lora_int_id=hash(lora_name) % (2**31),
                 lora_local_path=lora_path,
             )
-        
+
         # vLLM 的 generate 是同步的，但返回完整输出
-        # 为了兼容流式接口，我们逐字符 yield
+        # 为了兼容流式接口，我们按块 yield（优化前是逐字符）
         # 注意：vLLM 本身支持真正的流式，但需要使用 AsyncLLMEngine
         # 这里简化处理，后续可升级为 AsyncLLMEngine
         outputs = self._llm.generate([prompt], **request_kwargs)
-        
+
         if outputs and len(outputs) > 0:
             generated_text = outputs[0].outputs[0].text
-            # 模拟流式输出（实际生产中应使用 AsyncLLMEngine）
-            for char in generated_text:
-                yield char
+            # 优化：按块 yield 而不是逐字符，显著提升性能
+            chunk_size = self.stream_chunk_size
+            for i in range(0, len(generated_text), chunk_size):
+                yield generated_text[i : i + chunk_size]
 
-    def infer_batch(
-        self,
-        prompts: List[str],
-        **kwargs
-    ) -> List[str]:
+    def infer_batch(self, prompts: List[str], **kwargs) -> List[str]:
         """
         批量推理（vLLM 的强项）。
-        
+
         Args:
             prompts: 输入提示列表
             **kwargs: 生成参数
-            
+
         Returns:
             生成的文本列表
         """
         if self._llm is None:
             raise RuntimeError("模型未加载，请先调用 load_model()")
-            
+
         sampling_params = _SamplingParams(
             temperature=kwargs.get("temperature", 0.7),
             top_p=kwargs.get("top_p", 0.9),
             max_tokens=kwargs.get("max_new_tokens", kwargs.get("max_tokens", 512)),
             repetition_penalty=kwargs.get("repetition_penalty", 1.1),
         )
-        
+
         outputs = self._llm.generate(prompts, sampling_params)
         return [output.outputs[0].text for output in outputs]
 
@@ -536,27 +546,29 @@ class VllmCudaEngine(BaseEngine):
             self._llm = None
             self._model_path = None
             self._loaded_loras.clear()
-            
+
             # 强制垃圾回收
             gc.collect()
-            
+
             try:
                 import torch
+
                 torch.cuda.empty_cache()
                 torch.cuda.synchronize()
             except Exception:
                 pass
-                
+
             LOGGER.info("模型已卸载")
 
     def get_memory_usage(self) -> Dict[str, float]:
         """返回当前显存使用情况。"""
         try:
             import torch
+
             if torch.cuda.is_available():
-                allocated = torch.cuda.memory_allocated() / (1024 ** 3)
-                reserved = torch.cuda.memory_reserved() / (1024 ** 3)
-                total = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+                allocated = torch.cuda.memory_allocated() / (1024**3)
+                reserved = torch.cuda.memory_reserved() / (1024**3)
+                total = torch.cuda.get_device_properties(0).total_memory / (1024**3)
                 return {
                     "allocated_gb": round(allocated, 2),
                     "reserved_gb": round(reserved, 2),
@@ -565,7 +577,7 @@ class VllmCudaEngine(BaseEngine):
                 }
         except Exception as e:
             LOGGER.warning("获取显存信息失败: %s", e)
-            
+
         return {"allocated_gb": 0, "reserved_gb": 0, "total_gb": 0, "utilization": 0}
 
     def get_model_info(self) -> Dict[str, Any]:
