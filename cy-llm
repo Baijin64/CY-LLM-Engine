@@ -449,6 +449,8 @@ cmd_lite() {
     fi
 
     info "前台模式启动 (Ctrl+C 退出)"
+    # 预先创建日志文件
+    touch "$coordinator_log" "$gateway_log" "$worker_log"
     info "监控日志可通过 tail -f $gateway_log 查看"
     
     # 显式启动背景进程并捕获错误
@@ -537,8 +539,8 @@ cmd_lite() {
     success "  - Worker: $worker_port (gRPC)"
     echo -e "你可以现在开始发送请求。按 ${CYAN}Ctrl+C${NC} 停止所有服务。\n"
 
-    # 前台启动网关，方便直接看报错
-    env "${gw_env[@]}" "$python_path" -m uvicorn gateway_lite.app.main:app --host 0.0.0.0 --port "$port"
+    # 前台启动网关，方便直接看报错，同时也记录日志
+    env "${gw_env[@]}" "$python_path" -m uvicorn gateway_lite.app.main:app --host 0.0.0.0 --port "$port" 2>&1 | tee "$gateway_log"
 }
 
 # =============================================================================

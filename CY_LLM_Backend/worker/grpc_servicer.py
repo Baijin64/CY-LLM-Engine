@@ -387,16 +387,18 @@ def create_grpc_server(
     inference_server: InferenceServer,
     config: WorkerConfig,
     uds_path: str = "/tmp/cy_worker.sock",
+    port: Optional[int] = None,
     max_workers: int = GRPCDefaults.DEFAULT_WORKERS,
     telemetry: Optional[Telemetry] = None,
     enable_training: bool = True,
 ) -> grpc.Server:
-    """创建并配置 gRPC 服务器（强制 UDS）
+    """创建并配置 gRPC 服务器（支持 UDS & TCP）
     
     Args:
         inference_server: 推理服务器实例
         config: Worker 配置
         uds_path: Unix Domain Socket 路径 (仅支持 Linux/WSL)
+        port: TCP 端口 (可选)
         max_workers: 线程池大小
         telemetry: 遥测实例
         enable_training: 是否启用训练服务
@@ -451,10 +453,16 @@ def create_grpc_server(
         os.unlink(uds_path)
         LOGGER.info("已清理旧的 UDS 文件: %s", uds_path)
     
-    # 强制使用 UDS (Unix Domain Socket)
+    # 启用 UDS (Unix Domain Socket)
     server.add_insecure_port(f"unix://{uds_path}")
     LOGGER.info("gRPC 已启用 UDS 通信: %s", uds_path)
-    LOGGER.warning("⚠️  已禁用 TCP 端口监听，仅通过 UDS 提供服务")
+
+    # 启用 TCP (如果指定)
+    if port:
+        server.add_insecure_port(f"[::]:{port}")
+        LOGGER.info("gRPC 已启用 TCP 监听: 0.0.0.0:%d", port)
+    else:
+        LOGGER.warning("未指定 TCP 端口，仅通过 UDS 提供服务")
 
     return server
 

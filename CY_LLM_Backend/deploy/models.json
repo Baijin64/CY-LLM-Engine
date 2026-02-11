@@ -9,11 +9,11 @@
   },
   "default": {
     "model_path": "facebook/opt-2.7b",
-    "adapter_path": "/home/wtx/ElementWarfare/CY-LLM-Engine/CY_LLM_Training/checkpoints/furina_lora_opt",
+    "adapter_path": "/home/user/ElementWarfare/CY-LLM-Engine/CY_LLM_Training/checkpoints/furina_lora_opt",
     "engine": null,
     "gpu_memory_utilization": 0.85,
     "max_model_len": 2048,
-    "quantization": null
+    "quantization": "bitsandbytes"
   },
   "furina": {
     "model_path": "deepseek-ai/deepseek-llm-7b-chat",
