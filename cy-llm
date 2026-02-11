@@ -325,11 +325,13 @@ cmd_worker() {
     info "Engine: $engine"
     info "Port: $port"
     
+    local worker_uds="/tmp/cy_worker_${port}.sock"
     local serve_flag=""
     [[ "$serve" == true ]] && serve_flag="--serve"
     
     $conda_cmd run -n "$env_name" python "$WORKER_DIR/main.py" \
         --port "$port" \
+        --uds-path "$worker_uds" \
         ${model:+--model "$model"} \
         $serve_flag
 }
@@ -415,20 +417,24 @@ cmd_lite() {
     local gateway_log="/tmp/cy-llm-lite-gateway.log"
     local worker_log="/tmp/cy-llm-lite-worker.log"
 
+    # 基于端口生成 UDS 路径，避免冲突
+    local worker_uds="/tmp/cy_worker_${worker_port}.sock"
+    local coordinator_uds="/tmp/cy_coordinator_${coordinator_port}.sock"
+
     local coord_env=(
         "PYTHONPATH=$BACKEND_DIR"
-        "COORDINATOR_GRPC_BIND=0.0.0.0:${coordinator_port}"
-        "WORKER_GRPC_ADDR=127.0.0.1:${worker_port}"
+        "COORDINATOR_UDS_PATH=${coordinator_uds}"
+        "WORKER_UDS_PATH=${worker_uds}"
     )
 
     local gw_env=(
         "PYTHONPATH=$BACKEND_DIR"
-        "COORDINATOR_GRPC_ADDR=127.0.0.1:${coordinator_port}"
+        "COORDINATOR_UDS_PATH=${coordinator_uds}"
         "GATEWAY_REQUEST_TIMEOUT=300"
     )
 
     # 准备 Worker 启动参数
-    local worker_args=("--port" "$worker_port" "--serve" "--model" "$target_model")
+    local worker_args=("--port" "$worker_port" "--uds-path" "$worker_uds" "--serve" "--model" "$target_model")
 
     if [[ "$daemon" == true ]]; then
         info "后台模式启动..."

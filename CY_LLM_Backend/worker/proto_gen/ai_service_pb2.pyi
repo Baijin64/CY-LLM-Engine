@@ -2,7 +2,8 @@ from google.protobuf.internal import containers as _containers
 from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
-from typing import ClassVar as _ClassVar, Iterable as _Iterable, Mapping as _Mapping, Optional as _Optional, Union as _Union
+from collections.abc import Iterable as _Iterable, Mapping as _Mapping
+from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
@@ -73,16 +74,20 @@ class StreamPredictRequest(_message.Message):
     def __init__(self, model_id: _Optional[str] = ..., prompt: _Optional[str] = ..., adapter: _Optional[str] = ..., priority: _Optional[int] = ..., generation: _Optional[_Union[GenerationParameters, _Mapping]] = ..., metadata: _Optional[_Union[StreamMetadata, _Mapping]] = ..., worker_hint: _Optional[str] = ...) -> None: ...
 
 class StreamPredictResponse(_message.Message):
-    __slots__ = ("trace_id", "chunk", "end_of_stream", "index")
+    __slots__ = ("trace_id", "chunk", "end_of_stream", "index", "ttft_ms", "tokens_per_sec")
     TRACE_ID_FIELD_NUMBER: _ClassVar[int]
     CHUNK_FIELD_NUMBER: _ClassVar[int]
     END_OF_STREAM_FIELD_NUMBER: _ClassVar[int]
     INDEX_FIELD_NUMBER: _ClassVar[int]
+    TTFT_MS_FIELD_NUMBER: _ClassVar[int]
+    TOKENS_PER_SEC_FIELD_NUMBER: _ClassVar[int]
     trace_id: str
     chunk: str
     end_of_stream: bool
     index: int
-    def __init__(self, trace_id: _Optional[str] = ..., chunk: _Optional[str] = ..., end_of_stream: bool = ..., index: _Optional[int] = ...) -> None: ...
+    ttft_ms: float
+    tokens_per_sec: float
+    def __init__(self, trace_id: _Optional[str] = ..., chunk: _Optional[str] = ..., end_of_stream: bool = ..., index: _Optional[int] = ..., ttft_ms: _Optional[float] = ..., tokens_per_sec: _Optional[float] = ...) -> None: ...
 
 class ControlMessage(_message.Message):
     __slots__ = ("trace_id", "command", "payload")

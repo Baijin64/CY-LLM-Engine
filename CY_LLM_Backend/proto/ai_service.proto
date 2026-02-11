@@ -44,6 +44,10 @@ message StreamPredictResponse {
 	string chunk = 2;
 	bool end_of_stream = 3;
 	uint32 index = 4;
+	
+	// 性能指标 (仅在 end_of_stream=true 时可靠)
+	float ttft_ms = 5;         // 首字延迟 (ms)
+	float tokens_per_sec = 6;  // 生成速度 (tok/s)
 }
 
 message ControlMessage {

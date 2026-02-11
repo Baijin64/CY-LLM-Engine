@@ -213,6 +213,9 @@ class AiInferenceServicerImpl(AiInferenceServicer):
         enable_prompt_cache = spec.enable_prompt_cache or False
         prompt_cache_ttl = spec.prompt_cache_ttl
 
+        start_time = time.perf_counter()
+        first_token_time = None
+
         try:
             try:
                 chunk_index = 0
@@ -228,6 +231,9 @@ class AiInferenceServicerImpl(AiInferenceServicer):
                     enable_prompt_cache=enable_prompt_cache,
                     prompt_cache_ttl=prompt_cache_ttl,
                 ):
+                    if chunk_index == 0:
+                        first_token_time = time.perf_counter()
+
                     yield StreamPredictResponse(
                         trace_id=trace_id,
                         chunk=str(chunk),
@@ -237,13 +243,37 @@ class AiInferenceServicerImpl(AiInferenceServicer):
                     chunk_index += 1
 
                 # 发送结束标记
+                # 统计计算
+                end_time = time.perf_counter()
+                ttft_ms = (first_token_time - start_time) * 1000 if first_token_time else 0
+                
+                # 计算生成速度 (TPS)
+                gen_duration = end_time - first_token_time if first_token_time else (end_time - start_time)
+                gen_duration = max(gen_duration, 0.001)
+                
+                # 默认 1 chunk = 1 token
+                tokens_count = chunk_index
+                
+                # 启发式修正：如果 chunks 太多且不是异步 vLLM，可能是逐字符输出
+                engine_type_str = str(engine_type).lower()
+                if "vllm" in engine_type_str and "async" not in engine_type_str:
+                    tokens_count = tokens_count / 3.0 # 粗略估计字符到 token 的比例
+                
+                tps = tokens_count / gen_duration
+
                 yield StreamPredictResponse(
                     trace_id=trace_id,
                     chunk="",
                     end_of_stream=True,
                     index=chunk_index,
+                    ttft_ms=ttft_ms,
+                    tokens_per_sec=tps,
                 )
-                LOGGER.info("[%s] StreamPredict 完成: chunks=%d", trace_id, chunk_index)
+
+                LOGGER.info(
+                    "[%s] StreamPredict 完成: chunks=%d, speed=%.2f tok/s, ttft=%.2fms",
+                    trace_id, chunk_index, tps, ttft_ms
+                )
             except Exception as exc:
                 if span is not None and Status is not None and StatusCode is not None:
                     span.record_exception(exc)

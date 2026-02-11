@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+import time
 from typing import AsyncGenerator, Optional
 
 import grpc
@@ -81,11 +82,13 @@ class AsyncAiInferenceServicer(AiInferenceServicer):
         inference_server: InferenceServer,
         config: WorkerConfig,
         telemetry: Optional[Telemetry] = None,
+        tracer=None,
     ) -> None:
         self._server = inference_server
         self._config = config
         self._telemetry = telemetry or Telemetry()
         self._executor = None  # 用于同步代码的线程池
+        self._tracer = tracer
 
     async def StreamPredict(
         self,
@@ -93,119 +96,19 @@ class AsyncAiInferenceServicer(AiInferenceServicer):
         context: aio.ServicerContext,
     ) -> AsyncGenerator[StreamPredictResponse, None]:
         """异步双向流式推理接口"""
-        first_request = await request_iterator.__anext__()
-        trace_id = first_request.metadata.trace_id
-        model_id = first_request.model_id
-        priority = first_request.priority or 0
-
-        # OpenTelemetry span
-        span = None
-        if OTEL_AVAILABLE and self._tracer:
-            span = self._tracer.start_as_current_span("StreamPredict")
-            span.set_attribute("model_id", model_id)
-            span.set_attribute("priority", priority)
-
-        LOGGER.info(
-            "[%s] AsyncStreamPredict 请求: model=%s prompt_len=%d priority=%d",
-            trace_id, model_id, len(first_request.prompt), priority,
-        )
-
-        # 获取模型配置
-        spec = self._config.model_registry.get(model_id)
-        if spec is None:
-            LOGGER.error("[%s] 模型 %s 未在注册表中找到", trace_id, model_id)
-            await context.abort(
-                grpc.StatusCode.NOT_FOUND,
-                f"Model '{model_id}' not found in registry",
-            )
-            if span:
-                span.set_status(Status(StatusCode, "NOT_FOUND"))
-                span.end()
-            return
-
-        model_path = spec.model_path
-        adapter_path = adapter or spec.adapter_path
-        engine_type = spec.engine or self._config.preferred_backend
-        engine_kwargs = self._build_engine_kwargs(spec)
-        generation_kwargs = self._build_generation_params(first_request.generation)
-        enable_prompt_cache = spec.enable_prompt_cache or False
-        prompt_cache_ttl = spec.prompt_cache_ttl
-
         try:
-            chunk_index = 0
-
-            # 检查是否有异步推理方法
-            if hasattr(self._server, 'async_stream_predict'):
-                # 原生异步推理
-                async for chunk in self._server.async_stream_predict(
-                    model_id=model_id,
-                    prompt=first_request.prompt,
-                    model_path=model_path,
-                    adapter_path=adapter_path,
-                    engine_type=engine_type,
-                    generation_kwargs=generation_kwargs or None,
-                    engine_kwargs=engine_kwargs or None,
-                    priority=priority,
-                    enable_prompt_cache=enable_prompt_cache,
-                    prompt_cache_ttl=prompt_cache_ttl,
-                ):
-                    yield StreamPredictResponse(
-                        trace_id=trace_id,
-                        chunk=chunk,
-                        end_of_stream=False,
-                        index=chunk_index,
-                    )
-                    chunk_index += 1
-            else:
-                # 兼容同步推理（在线程池中执行）
-                loop = asyncio.get_event_loop()
-                sync_gen = self._server.stream_predict(
-                    model_id=model_id,
-                    prompt=first_request.prompt,
-                    model_path=model_path,
-                    adapter_path=adapter_path,
-                    engine_type=engine_type,
-                    generation_kwargs=generation_kwargs or None,
-                    engine_kwargs=engine_kwargs or None,
-                    priority=priority,
-                    enable_prompt_cache=enable_prompt_cache,
-                    prompt_cache_ttl=prompt_cache_ttl,
-                )
-
-                # 将同步生成器转换为异步
-                for chunk in sync_gen:
-                    yield StreamPredictResponse(
-                        trace_id=trace_id,
-                        chunk=chunk,
-                        end_of_stream=False,
-                        index=chunk_index,
-                    )
-                    chunk_index += 1
-                    # 让出控制权，避免阻塞事件循环
-                    await asyncio.sleep(0)
-
-            # 发送结束标记
-            yield StreamPredictResponse(
-                trace_id=trace_id,
-                chunk="",
-                end_of_stream=True,
-                index=chunk_index,
-            )
-            if span:
-                span.set_status(Status(StatusCode, "OK"))
-                span.end()
-
-        except Exception as exc:
-            LOGGER.exception("[%s] AsyncStreamPredict 异常: %s", trace_id, exc)
-            if span:
-                span.record_exception(exc)
-                span.set_status(Status(StatusCode, str(exc)))
-                span.end()
-            await context.abort(
-                grpc.StatusCode.INTERNAL,
-                f"Inference error: {exc}",
-            )
+            first_request = await request_iterator.__anext__()
+        except StopAsyncIteration:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Empty request stream")
             return
+
+        trace_id = (
+            first_request.metadata.trace_id 
+            if (first_request.metadata and first_request.metadata.trace_id) 
+            else str(uuid.uuid4())
+        )
+        model_id = first_request.model_id or "default"
+        prompt = first_request.prompt
         adapter = first_request.adapter or None
         priority = first_request.priority or 0
 
@@ -222,6 +125,13 @@ class AsyncAiInferenceServicer(AiInferenceServicer):
             if gen_params.repetition_penalty > 0:
                 generation_kwargs["repetition_penalty"] = gen_params.repetition_penalty
 
+        # OpenTelemetry span
+        span = None
+        if OTEL_AVAILABLE and hasattr(self, '_tracer') and self._tracer:
+            span = self._tracer.start_as_current_span("StreamPredict")
+            span.set_attribute("model_id", model_id)
+            span.set_attribute("priority", priority)
+
         LOGGER.info(
             "[%s] AsyncStreamPredict 请求: model=%s prompt_len=%d priority=%d",
             trace_id, model_id, len(prompt), priority,
@@ -235,19 +145,24 @@ class AsyncAiInferenceServicer(AiInferenceServicer):
                 grpc.StatusCode.NOT_FOUND,
                 f"Model '{model_id}' not found in registry",
             )
+            if span:
+                span.set_status(Status(StatusCode.ERROR, "NOT_FOUND"))
+                span.end()
             return
 
         model_path = spec.model_path
         adapter_path = adapter or spec.adapter_path
         engine_type = spec.engine or self._config.preferred_backend
         engine_kwargs = self._build_engine_kwargs(spec)
-
         enable_prompt_cache = spec.enable_prompt_cache or False
         prompt_cache_ttl = spec.prompt_cache_ttl
 
+        start_time = time.perf_counter()
+        first_token_time = None
+
         try:
             chunk_index = 0
-            
+
             # 检查是否有异步推理方法
             if hasattr(self._server, 'async_stream_predict'):
                 # 原生异步推理
@@ -263,6 +178,9 @@ class AsyncAiInferenceServicer(AiInferenceServicer):
                     enable_prompt_cache=enable_prompt_cache,
                     prompt_cache_ttl=prompt_cache_ttl,
                 ):
+                    if chunk_index == 0:
+                        first_token_time = time.perf_counter()
+
                     yield StreamPredictResponse(
                         trace_id=trace_id,
                         chunk=str(chunk),
@@ -272,7 +190,6 @@ class AsyncAiInferenceServicer(AiInferenceServicer):
                     chunk_index += 1
             else:
                 # 兼容同步推理（在线程池中执行）
-                loop = asyncio.get_event_loop()
                 sync_gen = self._server.stream_predict(
                     model_id=model_id,
                     prompt=prompt,
@@ -285,9 +202,12 @@ class AsyncAiInferenceServicer(AiInferenceServicer):
                     enable_prompt_cache=enable_prompt_cache,
                     prompt_cache_ttl=prompt_cache_ttl,
                 )
-                
+
                 # 将同步生成器转换为异步
                 for chunk in sync_gen:
+                    if chunk_index == 0:
+                        first_token_time = time.perf_counter()
+
                     yield StreamPredictResponse(
                         trace_id=trace_id,
                         chunk=str(chunk),
@@ -298,18 +218,50 @@ class AsyncAiInferenceServicer(AiInferenceServicer):
                     # 让出控制权，避免阻塞事件循环
                     await asyncio.sleep(0)
 
+            # 统计计算
+            end_time = time.perf_counter()
+            ttft_ms = (first_token_time - start_time) * 1000 if first_token_time else 0
+            
+            # 计算生成速度 (TPS)
+            gen_duration = end_time - first_token_time if first_token_time else (end_time - start_time)
+            gen_duration = max(gen_duration, 0.001)
+            
+            tokens_count = chunk_index
+            engine_type_str = str(engine_type).lower()
+            if "vllm" in engine_type_str and "async" not in engine_type_str:
+                tokens_count = tokens_count / 3.0
+            
+            tps = tokens_count / gen_duration
+
             # 发送结束标记
             yield StreamPredictResponse(
                 trace_id=trace_id,
                 chunk="",
                 end_of_stream=True,
                 index=chunk_index,
+                ttft_ms=ttft_ms,
+                tokens_per_sec=tps,
             )
-            LOGGER.info("[%s] AsyncStreamPredict 完成: chunks=%d", trace_id, chunk_index)
+            
+            LOGGER.info(
+                "[%s] AsyncStreamPredict 完成: chunks=%d, speed=%.2f tok/s, ttft=%.2fms", 
+                trace_id, chunk_index, tps, ttft_ms
+            )
+            
+            if span:
+                span.set_status(Status(StatusCode.OK))
+                span.end()
 
         except Exception as exc:
-            LOGGER.exception("[%s] 异步推理异常: %s", trace_id, exc)
-            await context.abort(grpc.StatusCode.INTERNAL, str(exc))
+            LOGGER.exception("[%s] AsyncStreamPredict 异常: %s", trace_id, exc)
+            if span:
+                span.record_exception(exc)
+                span.set_status(Status(StatusCode.ERROR, str(exc)))
+                span.end()
+            await context.abort(
+                grpc.StatusCode.INTERNAL,
+                f"Inference error: {exc}",
+            )
 
     def _build_engine_kwargs(self, spec) -> dict:
         """构建引擎参数"""

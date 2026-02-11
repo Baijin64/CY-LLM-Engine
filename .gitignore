@@ -103,6 +103,7 @@ out/
 build/
 **/build/
 **/bin/
+!**/rust_core/src/bin/
 
 # Kotlin compiler caches and metadata
 .kotlinc/
